@@ -2,6 +2,7 @@ package jsonpath
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -31,29 +32,35 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
-	invalid := []struct {
-		name string
-		expr string
-		want string // substring of error message
-	}{
-		{"empty string", "", "empty expression"},
-		{"no dollar", "abc", ""},
-		{"recursive descent", "$..name", "recursive descent"},
-		{"filter", "$.items[?(@.x>1)]", "filter"},
-		{"negative index", "$[-1]", "negative array indices"},
-		{"union", "$[1,2]", "union"},
-		{"slice", "$[1:3]", "slice"},
-	}
+		invalid := []struct {
+			name string
+			expr string
+			want string // substring of error message
+		}{
+			{"empty string", "", "empty expression"},
+			{"no dollar", "abc", "must start with $"},
+			{"recursive descent", "$..name", "recursive descent"},
+			{"filter", "$.items[?(@.x>1)]", "filter"},
+			{"function", "$.length()", "invalid JSONPath syntax"},
+			{"negative index", "$[-1]", "negative array indices"},
+			{"union", "$[1,2]", "union"},
+			{"slice", "$[1:3]", "slice"},
+			{"dot key invalid", "$.foo-bar", "invalid JSONPath syntax"},
+		}
 
-	for _, tc := range invalid {
-		t.Run(tc.name, func(t *testing.T) {
-			err := Validate(tc.expr)
-			if err == nil {
-				t.Errorf("Validate(%q) expected error, got nil", tc.expr)
-			}
-		})
+		for _, tc := range invalid {
+			t.Run(tc.name, func(t *testing.T) {
+				err := Validate(tc.expr)
+				if err == nil {
+					t.Errorf("Validate(%q) expected error, got nil", tc.expr)
+					return
+				}
+				if !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("Validate(%q) error = %q, want substring %q", tc.expr, err.Error(), tc.want)
+				}
+			})
+		}
 	}
-}
 
 func TestExtract(t *testing.T) {
 	tests := []struct {

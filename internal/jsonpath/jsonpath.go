@@ -3,15 +3,22 @@ package jsonpath
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/ohler55/ojg/jp"
 )
+
+var dotChildPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // Validate checks whether expr is within the allowed JSONPath subset.
 // Returns nil if valid, or a descriptive error.
 func Validate(expr string) error {
 	if expr == "" {
 		return errors.New("empty expression")
+	}
+	if !strings.HasPrefix(expr, "$") {
+		return errors.New("expression must start with $")
 	}
 
 	parsed, err := jp.ParseString(expr)
@@ -52,6 +59,10 @@ func Validate(expr string) error {
 		}
 	}
 
+	if err := validateDotChildNames(expr); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -85,4 +96,64 @@ func containsWildcard(expr jp.Expr) bool {
 		}
 	}
 	return false
+}
+
+func validateDotChildNames(expr string) error {
+	i := 1 // skip '$'
+	for i < len(expr) {
+		switch expr[i] {
+		case '.':
+			i++
+			start := i
+			for i < len(expr) {
+				c := expr[i]
+				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+					i++
+					continue
+				}
+				break
+			}
+			if start == i {
+				return fmt.Errorf("dot child key is empty near index %d", start-1)
+			}
+			if !dotChildPattern.MatchString(expr[start:i]) {
+				return fmt.Errorf("dot child key %q does not match ^[a-zA-Z_][a-zA-Z0-9_]*$", expr[start:i])
+			}
+		case '[':
+			i++
+			if i >= len(expr) {
+				return fmt.Errorf("unterminated bracket at index %d", i-1)
+			}
+			if expr[i] == '\'' {
+				i++
+				for i < len(expr) {
+					switch expr[i] {
+					case '\\':
+						i += 2
+					case '\'':
+						i++
+						if i >= len(expr) || expr[i] != ']' {
+							return fmt.Errorf("expected ] after bracket-quoted key at index %d", i)
+						}
+						i++
+						goto next
+					default:
+						i++
+					}
+				}
+				return errors.New("unterminated bracket-quoted key")
+			}
+			for i < len(expr) && expr[i] != ']' {
+				i++
+			}
+			if i >= len(expr) {
+				return errors.New("unterminated bracket segment")
+			}
+			i++
+		default:
+			return fmt.Errorf("unexpected token %q at index %d", expr[i], i)
+		}
+	next:
+	}
+	return nil
 }
