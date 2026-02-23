@@ -120,3 +120,60 @@ func TestRenderRequestBuilder(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v", err)
 	}
 }
+
+func TestRenderBodyBuilderTemplateMode(t *testing.T) {
+	action := &schema.ActionFile{
+		Name: "create-issue",
+		Request: schema.RequestDef{
+			Body: &schema.BodyDef{
+				Mode: "template",
+				Template: map[string]any{
+					"title":     "{arg.title}",
+					"body":      "{arg.body}",
+					"assignees": "{arg.assignees}",
+					"labels":    "{arg.labels}",
+				},
+			},
+		},
+		Args: []schema.ArgDef{
+			{Name: "title", Type: "string", Required: true},
+			{Name: "body", Type: "string", Required: false},
+			{Name: "assignees", Type: "array", Required: false},
+			{Name: "labels", Type: "array", Required: false},
+		},
+	}
+	out, err := RenderBodyBuilder(action)
+	if err != nil {
+		t.Fatalf("RenderBodyBuilder error: %v", err)
+	}
+	for _, part := range []string{`payload["title"]`, `payload["body"]`, `payload["assignees"]`, `payload["labels"]`} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("rendered output missing %q", part)
+		}
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_body_builder.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestRenderBodyBuilderRawJSONMode(t *testing.T) {
+	action := &schema.ActionFile{
+		Name: "create-or-update-file",
+		Request: schema.RequestDef{
+			Body: &schema.BodyDef{Mode: "raw_json_arg", Arg: "payload-json"},
+		},
+		Args: []schema.ArgDef{{Name: "payload-json", Type: "string", Required: true}},
+	}
+	out, err := RenderBodyBuilder(action)
+	if err != nil {
+		t.Fatalf("RenderBodyBuilder error: %v", err)
+	}
+	for _, part := range []string{`parsed.PayloadJson`, `json.Valid`, `[]byte(raw)`} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("rendered output missing %q", part)
+		}
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_body_builder_raw.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}

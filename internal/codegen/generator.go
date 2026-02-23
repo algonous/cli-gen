@@ -36,6 +36,9 @@ var argParserTemplate string
 //go:embed templates/request_builder.go.tmpl
 var requestBuilderTemplate string
 
+//go:embed templates/body_builder.go.tmpl
+var bodyBuilderTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -140,6 +143,33 @@ func RenderRequestBuilder(cli *schema.CliFile, action *schema.ActionFile) (strin
 	}
 
 	return renderGoTemplate("request_builder.go.tmpl", requestBuilderTemplate, data, nil)
+}
+
+type BodyBuilderData struct {
+	HandlerSuffix      string
+	Mode               string
+	RawJSONArgField    string
+	TemplateAssignExpr []string
+}
+
+func RenderBodyBuilder(action *schema.ActionFile) (string, error) {
+	data := BodyBuilderData{
+		HandlerSuffix: toHandlerName(action.Name),
+	}
+	if action.Request.Body != nil {
+		data.Mode = action.Request.Body.Mode
+	}
+	argSet := map[string]schema.ArgDef{}
+	for _, arg := range action.Args {
+		argSet[arg.Name] = arg
+	}
+	if action.Request.Body != nil && action.Request.Body.Mode == "raw_json_arg" {
+		data.RawJSONArgField = toFieldName(action.Request.Body.Arg)
+	}
+	if action.Request.Body != nil && action.Request.Body.Mode == "template" {
+		data.TemplateAssignExpr = buildTemplateAssignments(action.Request.Body.Template, argSet, "payload")
+	}
+	return renderGoTemplate("body_builder.go.tmpl", bodyBuilderTemplate, data, nil)
 }
 
 func toHandlerName(action string) string {
@@ -320,4 +350,56 @@ func headerLine(h schema.Header, argSet map[string]schema.ArgDef, envSet map[str
 		}
 	}
 	return []string{fmt.Sprintf("req.Header.Set(%q, %q)", h.Name, fmt.Sprintf("%v", h.Value))}
+}
+
+func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, root string) []string {
+	obj, ok := template.(map[string]any)
+	if !ok {
+		return nil
+	}
+	lines := []string{}
+	for key, value := range obj {
+		if s, ok := value.(string); ok {
+			if kind, name, ok := parseInlinePlaceholder(s); ok && kind == "arg" {
+				arg, exists := argSet[name]
+				if !exists {
+					continue
+				}
+				field := "parsed." + toFieldName(name)
+				switch arg.Type {
+				case "array":
+					if arg.Required {
+						lines = append(lines, fmt.Sprintf("%s[%q] = []any{}", root, key))
+						lines = append(lines, fmt.Sprintf("for _, v := range %s { %s[%q] = append(%s[%q].([]any), v) }", field, root, key, root, key))
+					} else {
+						lines = append(lines, fmt.Sprintf("if len(%s) > 0 {", field))
+						lines = append(lines, fmt.Sprintf("  %s[%q] = []any{}", root, key))
+						lines = append(lines, fmt.Sprintf("  for _, v := range %s { %s[%q] = append(%s[%q].([]any), v) }", field, root, key, root, key))
+						lines = append(lines, "}")
+					}
+				case "boolean":
+					if arg.Required {
+						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
+					} else {
+						lines = append(lines, fmt.Sprintf("if %s { %s[%q] = %s }", field, root, key, field))
+					}
+				case "number":
+					if arg.Required {
+						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
+					} else {
+						lines = append(lines, fmt.Sprintf("if %s != 0 { %s[%q] = %s }", field, root, key, field))
+					}
+				default:
+					if arg.Required {
+						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
+					} else {
+						lines = append(lines, fmt.Sprintf("if %s != \"\" { %s[%q] = %s }", field, root, key, field))
+					}
+				}
+				continue
+			}
+		}
+		lines = append(lines, fmt.Sprintf("%s[%q] = %#v", root, key, value))
+	}
+	return lines
 }

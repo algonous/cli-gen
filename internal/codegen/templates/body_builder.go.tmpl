@@ -1,0 +1,24 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+func buildBody{{ .HandlerSuffix }}(parsed {{ .HandlerSuffix }}Args) ([]byte, error) {
+{{- if eq .Mode "template" }}
+	payload := map[string]any{}
+{{- range .TemplateAssignExpr }}
+	{{ . }}
+{{- end }}
+	return json.Marshal(payload)
+{{- else if eq .Mode "raw_json_arg" }}
+	raw := parsed.{{ .RawJSONArgField }}
+	if !json.Valid([]byte(raw)) {
+		return nil, fmt.Errorf("invalid JSON payload")
+	}
+	return []byte(raw), nil
+{{- else }}
+	return nil, nil
+{{- end }}
+}
