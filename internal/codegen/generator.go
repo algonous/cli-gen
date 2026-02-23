@@ -3,8 +3,10 @@ package codegen
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"go/format"
+	"net/http"
 	"strings"
 	"text/template"
 
@@ -38,6 +40,9 @@ var requestBuilderTemplate string
 
 //go:embed templates/body_builder.go.tmpl
 var bodyBuilderTemplate string
+
+//go:embed templates/executor.go.tmpl
+var executorTemplate string
 
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
@@ -170,6 +175,19 @@ func RenderBodyBuilder(action *schema.ActionFile) (string, error) {
 		data.TemplateAssignExpr = buildTemplateAssignments(action.Request.Body.Template, argSet, "payload")
 	}
 	return renderGoTemplate("body_builder.go.tmpl", bodyBuilderTemplate, data, nil)
+}
+
+type ExecutorTemplateData struct {
+	HandlerSuffix   string
+	SuccessStatuses []int
+}
+
+func RenderExecutor(action *schema.ActionFile) (string, error) {
+	data := ExecutorTemplateData{
+		HandlerSuffix:   toHandlerName(action.Name),
+		SuccessStatuses: action.Response.SuccessStatus,
+	}
+	return renderGoTemplate("executor.go.tmpl", executorTemplate, data, nil)
 }
 
 func toHandlerName(action string) string {
@@ -402,4 +420,33 @@ func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, roo
 		lines = append(lines, fmt.Sprintf("%s[%q] = %#v", root, key, value))
 	}
 	return lines
+}
+
+type Envelope struct {
+	OK       bool   `json:"ok"`
+	Status   int    `json:"status"`
+	Body     any    `json:"body,omitempty"`
+	BodyText string `json:"body_text,omitempty"`
+}
+
+func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) (Envelope, error) {
+	ok := false
+	for _, code := range successStatuses {
+		if resp.StatusCode == code {
+			ok = true
+			break
+		}
+	}
+	env := Envelope{OK: ok, Status: resp.StatusCode}
+	if len(body) == 0 {
+		env.BodyText = ""
+		return env, nil
+	}
+	var parsed any
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		env.Body = parsed
+		return env, nil
+	}
+	env.BodyText = string(body)
+	return env, nil
 }

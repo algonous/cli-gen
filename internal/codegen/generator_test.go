@@ -1,8 +1,11 @@
 package codegen
 
 import (
+	"bytes"
+	"encoding/json"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -175,5 +178,59 @@ func TestRenderBodyBuilderRawJSONMode(t *testing.T) {
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), "generated_body_builder_raw.go", out, parser.AllErrors); err != nil {
 		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestRenderExecutor(t *testing.T) {
+	action := &schema.ActionFile{Name: "list-repo-issues", Response: schema.ResponseDef{SuccessStatus: []int{200, 201}}}
+	out, err := RenderExecutor(action)
+	if err != nil {
+		t.Fatalf("RenderExecutor error: %v", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_executor.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestBuildEnvelope(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		ok     bool
+		hasB   bool
+		hasTxt bool
+	}{
+		{name: "success json", status: 200, body: `{"id":1}`, ok: true, hasB: true},
+		{name: "error json", status: 404, body: `{"message":"not found"}`, ok: false, hasB: true},
+		{name: "error text", status: 500, body: `internal error`, ok: false, hasTxt: true},
+		{name: "success empty", status: 204, body: ``, ok: true, hasTxt: true},
+		{name: "success text", status: 200, body: `OK`, ok: true, hasTxt: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: tc.status}
+			env, err := BuildEnvelope([]int{200, 204}, resp, []byte(tc.body))
+			if err != nil {
+				t.Fatalf("BuildEnvelope error: %v", err)
+			}
+			if env.OK != tc.ok {
+				t.Fatalf("ok=%v want=%v", env.OK, tc.ok)
+			}
+			if tc.hasB && env.Body == nil {
+				t.Fatal("expected body")
+			}
+			if tc.hasTxt && env.BodyText == "" && tc.body != "" {
+				t.Fatal("expected body_text")
+			}
+
+			encoded, err := json.Marshal(env)
+			if err != nil {
+				t.Fatalf("marshal envelope: %v", err)
+			}
+			if !bytes.Contains(encoded, []byte(`"status"`)) {
+				t.Fatalf("invalid envelope json: %s", encoded)
+			}
+		})
 	}
 }
