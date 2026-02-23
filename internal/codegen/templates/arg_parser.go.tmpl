@@ -1,0 +1,66 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+)
+
+type {{ .HandlerSuffix }}Args struct {
+{{- range .Args }}
+	{{ fieldName .Name }} {{ if eq .Type "number" }}float64{{ else if eq .Type "boolean" }}bool{{ else if eq .Type "array" }}[]string{{ else }}string{{ end }}
+{{- end }}
+}
+
+type arrayFlag []string
+
+func (a *arrayFlag) String() string { return strings.Join(*a, ",") }
+
+func (a *arrayFlag) Set(v string) error {
+	*a = append(*a, v)
+	return nil
+}
+
+func parseArgs{{ .HandlerSuffix }}(args []string) {{ .HandlerSuffix }}Args {
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[:i]
+			break
+		}
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+			fmt.Fprintf(os.Stderr, "error: short flags are not supported: %s\n", arg)
+			os.Exit(2)
+		}
+	}
+
+	fs := flag.NewFlagSet("{{ .ActionName }}", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	parsed := {{ .HandlerSuffix }}Args{}
+{{- range .Args }}
+{{- if isArray .Type }}
+	fs.Var((*arrayFlag)(&parsed.{{ fieldName .Name }}), "{{ .Name }}", "{{ .Help }}")
+{{- else }}
+	{{ varName .Name }}Ptr := fs.{{ flagType .Type }}("{{ .Name }}", {{ if eq .Type "string" }}""{{ else if eq .Type "number" }}0{{ else }}false{{ end }}, "{{ .Help }}")
+{{- end }}
+{{- end }}
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+{{- range .Args }}
+{{- if not (isArray .Type) }}
+	parsed.{{ fieldName .Name }} = *{{ varName .Name }}Ptr
+{{- end }}
+{{- end }}
+
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+{{- range .RequiredFlagSet }}
+	if !set["{{ . }}"] {
+		fmt.Fprintf(os.Stderr, "error: required flag --%s not provided\n", "{{ . }}")
+		os.Exit(2)
+	}
+{{- end }}
+
+	return parsed
+}
