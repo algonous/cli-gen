@@ -1,0 +1,28 @@
+name: create-or-update-file
+impl: custom
+description: Create or update file via custom binding
+request:
+  method: PUT
+  path: /repos/{arg.owner}/{arg.repo}/contents/{arg.path}
+  body:
+    mode: raw_json_arg
+    arg: payload-json
+args:
+  - name: owner
+    type: string
+    required: true
+    help: owner
+  - name: repo
+    type: string
+    required: true
+    help: repo
+  - name: path
+    type: string
+    required: true
+    help: path
+  - name: payload-json
+    type: string
+    required: true
+    help: raw payload
+response:
+  success_status: [200, 201]

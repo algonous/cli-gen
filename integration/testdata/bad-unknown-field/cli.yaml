@@ -1,0 +1,12 @@
+schema_version: v1
+cli:
+  name: github
+  description: GitHub REST API CLI
+  runtime:
+    env:
+      - name: GITHUB_BASE_URL
+        required: true
+      - name: GITHUB_DEBUG_TRACE
+        required: false
+    base_url:
+      from_env: GITHUB_BASE_URL

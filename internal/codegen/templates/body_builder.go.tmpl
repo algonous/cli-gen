@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+var (
+	_ = json.Valid
+	_ = fmt.Sprintf
+)
+
 func buildBody{{ .HandlerSuffix }}(parsed {{ .HandlerSuffix }}Args) ([]byte, error) {
 {{- if eq .Mode "template" }}
 	payload := map[string]any{}

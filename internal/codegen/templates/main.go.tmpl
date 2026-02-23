@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var logFilePath string
+
 func main() {
 	logFile := flag.String("log-file", "", "append JSONL output to file")
 	flag.Parse()
@@ -30,7 +32,7 @@ func main() {
 		printTopHelp()
 		os.Exit(1)
 	}
-	_ = logFile
+	logFilePath = *logFile
 }
 
 func printTopHelp() {
@@ -43,9 +45,3 @@ func printTopHelp() {
 {{- end }}
 	fmt.Println("  skill")
 }
-{{- range .Actions }}
-
-func handleAction{{ handlerName . }}(_ []string) {
-	fmt.Println("TODO: {{ . }}")
-}
-{{- end }}

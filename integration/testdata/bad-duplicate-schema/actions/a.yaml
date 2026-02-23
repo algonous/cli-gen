@@ -1,0 +1,33 @@
+name: list-repo-issues
+impl: generated
+description: List issues in a repository
+request:
+  method: GET
+  path: /repos/{arg.owner}/{arg.repo}/issues
+  query:
+    - name: state
+      value: "{arg.state}"
+    - name: per_page
+      value: 50
+  headers:
+    - name: X-Debug-Trace
+      value: "{env.GITHUB_DEBUG_TRACE}"
+args:
+  - name: owner
+    type: string
+    required: true
+    help: Repository owner
+  - name: repo
+    type: string
+    required: true
+    help: Repository name
+  - name: state
+    type: string
+    required: false
+    help: Issue state filter
+response:
+  success_status: [200]
+response_hints:
+  fields:
+    - path: $
+      hint: Entire issues array

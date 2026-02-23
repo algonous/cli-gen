@@ -1,0 +1,35 @@
+name: create-issue
+impl: generated
+description: Create an issue
+request:
+  method: POST
+  path: /repos/{arg.owner}/{arg.repo}/issues
+  body:
+    mode: template
+    template:
+      title: "{arg.title}"
+      body: "{arg.body}"
+      labels: "{arg.labels}"
+args:
+  - name: owner
+    type: string
+    required: true
+    help: Repository owner
+  - name: repo
+    type: string
+    required: true
+    help: Repository name
+  - name: title
+    type: string
+    required: true
+    help: Issue title
+  - name: body
+    type: string
+    required: false
+    help: Issue body
+  - name: labels
+    type: array
+    required: false
+    help: Labels
+response:
+  success_status: [201]

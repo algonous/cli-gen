@@ -57,6 +57,12 @@ var logfileTemplate string
 //go:embed templates/skill.go.tmpl
 var skillTemplate string
 
+//go:embed templates/action_handler.go.tmpl
+var actionHandlerTemplate string
+
+//go:embed templates/runtime_helpers.go.tmpl
+var runtimeHelpersTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -277,6 +283,35 @@ func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
 	}, nil)
 }
 
+type ActionHandlerData struct {
+	HandlerSuffix string
+	HasBody       bool
+	EnvNames      []string
+	RequiredEnvs  []string
+}
+
+func RenderActionHandler(cli *schema.CliFile, action *schema.ActionFile) (string, error) {
+	envNames := make([]string, 0, len(cli.Cli.Runtime.Env))
+	required := make([]string, 0, len(cli.Cli.Runtime.Env))
+	for _, e := range cli.Cli.Runtime.Env {
+		envNames = append(envNames, e.Name)
+		if e.Required {
+			required = append(required, e.Name)
+		}
+	}
+	data := ActionHandlerData{
+		HandlerSuffix: toHandlerName(action.Name),
+		HasBody:       action.Request.Body != nil && action.Request.Body.Mode != "",
+		EnvNames:      envNames,
+		RequiredEnvs:  required,
+	}
+	return renderGoTemplate("action_handler.go.tmpl", actionHandlerTemplate, data, nil)
+}
+
+func RenderRuntimeHelpers() (string, error) {
+	return renderGoTemplate("runtime_helpers.go.tmpl", runtimeHelpersTemplate, nil, nil)
+}
+
 func (g *Generator) Generate(set *schema.SchemaSet, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir output dir: %w", err)
@@ -298,6 +333,10 @@ func (g *Generator) Generate(set *schema.SchemaSet, outDir string) error {
 	if err != nil {
 		return err
 	}
+	runtimeSrc, err := RenderRuntimeHelpers()
+	if err != nil {
+		return err
+	}
 
 	if err := os.WriteFile(filepath.Join(outDir, "main.go"), []byte(mainSrc), 0o644); err != nil {
 		return err
@@ -310,6 +349,74 @@ func (g *Generator) Generate(set *schema.SchemaSet, outDir string) error {
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "secrets.go"), []byte(secretSrc), 0o644); err != nil {
 		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "runtime_helpers.go"), []byte(runtimeSrc), 0o644); err != nil {
+		return err
+	}
+
+	for _, action := range set.Actions {
+		suffix := strings.ToLower(strings.ReplaceAll(action.Name, "-", "_"))
+		if action.Impl == "custom" {
+			dispatcher, err := RenderCustomDispatcher(action.Name)
+			if err != nil {
+				return err
+			}
+			parser, err := RenderArgParser(action)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_handler.go"), []byte(dispatcher), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_arg_parser.go"), []byte(parser), 0o644); err != nil {
+				return err
+			}
+			stub, err := RenderCustomBindingStub(action.Name)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_custom_binding.go"), []byte(stub), 0o644); err != nil {
+				return err
+			}
+			continue
+		}
+
+		handler, err := RenderActionHandler(set.CLI, action)
+		if err != nil {
+			return err
+		}
+		parser, err := RenderArgParser(action)
+		if err != nil {
+			return err
+		}
+		reqBuilder, err := RenderRequestBuilder(set.CLI, action)
+		if err != nil {
+			return err
+		}
+		bodyBuilder, err := RenderBodyBuilder(action)
+		if err != nil {
+			return err
+		}
+		executor, err := RenderExecutor(action)
+		if err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_handler.go"), []byte(handler), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_arg_parser.go"), []byte(parser), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_request.go"), []byte(reqBuilder), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_body.go"), []byte(bodyBuilder), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "action_"+suffix+"_exec.go"), []byte(executor), 0o644); err != nil {
+			return err
+		}
 	}
 	goMod := fmt.Sprintf("module %s\n\ngo 1.25.0\n", set.CLI.Cli.Name)
 	if err := os.WriteFile(filepath.Join(outDir, "go.mod"), []byte(goMod), 0o644); err != nil {

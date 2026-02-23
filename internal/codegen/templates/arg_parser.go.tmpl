@@ -13,15 +13,6 @@ type {{ .HandlerSuffix }}Args struct {
 {{- end }}
 }
 
-type arrayFlag []string
-
-func (a *arrayFlag) String() string { return strings.Join(*a, ",") }
-
-func (a *arrayFlag) Set(v string) error {
-	*a = append(*a, v)
-	return nil
-}
-
 func parseArgs{{ .HandlerSuffix }}(args []string) {{ .HandlerSuffix }}Args {
 	for i, arg := range args {
 		if arg == "--" {

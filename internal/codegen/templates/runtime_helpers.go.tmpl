@@ -1,0 +1,55 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+)
+
+type envelope struct {
+	OK       bool   `json:"ok"`
+	Status   int    `json:"status"`
+	Body     any    `json:"body,omitempty"`
+	BodyText string `json:"body_text,omitempty"`
+}
+
+type arrayFlag []string
+
+func (a *arrayFlag) String() string { return strings.Join(*a, ",") }
+
+func (a *arrayFlag) Set(v string) error {
+	*a = append(*a, v)
+	return nil
+}
+
+func bytesReaderCloser(b []byte) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader(b))
+}
+
+func readAll(r io.Reader) ([]byte, error) {
+	return io.ReadAll(r)
+}
+
+func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) (envelope, error) {
+	ok := false
+	for _, code := range successStatuses {
+		if resp.StatusCode == code {
+			ok = true
+			break
+		}
+	}
+	env := envelope{OK: ok, Status: resp.StatusCode}
+	if len(body) == 0 {
+		env.BodyText = ""
+		return env, nil
+	}
+	var parsed any
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		env.Body = parsed
+		return env, nil
+	}
+	env.BodyText = string(body)
+	return env, nil
+}

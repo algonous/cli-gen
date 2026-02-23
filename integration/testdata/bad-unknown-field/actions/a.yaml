@@ -1,0 +1,14 @@
+name: x
+impl: generated
+description: x
+extra_field: y
+request:
+  method: GET
+  path: /x
+args:
+  - name: id
+    type: string
+    required: true
+    help: id
+response:
+  success_status: [200]

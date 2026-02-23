@@ -26,6 +26,9 @@ func executeAction{{ .HandlerSuffix }}(req *http.Request) error {
 		return err
 	}
 	os.Stdout.Write(append(line, '\n'))
+	if err := appendLogLine(logFilePath, line); err != nil {
+		return err
+	}
 	if env.OK {
 		return nil
 	}

@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+var (
+	_ = strconv.FormatBool
+	_ = strings.Join
+)
+
 func buildRequest{{ .HandlerSuffix }}(parsed {{ .HandlerSuffix }}Args, envs map[string]string) (*http.Request, error) {
 	baseURL := envs["{{ .BaseURLEnv }}"]
 	path := "{{ .PathLiteral }}"
