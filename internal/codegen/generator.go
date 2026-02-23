@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"go/format"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -17,10 +19,6 @@ type Generator struct{}
 
 func New() *Generator {
 	return &Generator{}
-}
-
-func (g *Generator) Generate(_ *schema.SchemaSet, _ string) error {
-	return nil
 }
 
 type MainTemplateData struct {
@@ -277,6 +275,47 @@ func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
 		CliName: set.CLI.Cli.Name,
 		Actions: actions,
 	}, nil)
+}
+
+func (g *Generator) Generate(set *schema.SchemaSet, outDir string) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir output dir: %w", err)
+	}
+
+	mainSrc, err := RenderMain(set)
+	if err != nil {
+		return err
+	}
+	skillSrc, err := RenderSkillHandler(set)
+	if err != nil {
+		return err
+	}
+	logSrc, err := RenderLogFileHelper()
+	if err != nil {
+		return err
+	}
+	secretSrc, err := RenderSecretsHelpers(set.CLI)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(outDir, "main.go"), []byte(mainSrc), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "skill.go"), []byte(skillSrc), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "logfile.go"), []byte(logSrc), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "secrets.go"), []byte(secretSrc), 0o644); err != nil {
+		return err
+	}
+	goMod := fmt.Sprintf("module %s\n\ngo 1.25.0\n", set.CLI.Cli.Name)
+	if err := os.WriteFile(filepath.Join(outDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func toHandlerName(action string) string {
