@@ -260,3 +260,29 @@ func TestRenderCustomBindingStub(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v", err)
 	}
 }
+
+func TestRenderSecretsHelpers(t *testing.T) {
+	cli := &schema.CliFile{
+		Cli: schema.CliDef{
+			Runtime: schema.RuntimeDef{
+				Env: []schema.EnvEntry{
+					{Name: "GITHUB_TOKEN", Secret: true},
+					{Name: "GITHUB_BASE_URL", Secret: false},
+				},
+			},
+		},
+	}
+	out, err := RenderSecretsHelpers(cli)
+	if err != nil {
+		t.Fatalf("RenderSecretsHelpers error: %v", err)
+	}
+	if !strings.Contains(out, `case "GITHUB_TOKEN"`) {
+		t.Fatalf("missing secret env switch case: %s", out)
+	}
+	if strings.Contains(out, `case "GITHUB_BASE_URL"`) {
+		t.Fatalf("non-secret env should not be in switch: %s", out)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_secrets.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}

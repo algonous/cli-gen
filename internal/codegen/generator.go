@@ -50,6 +50,9 @@ var customDispatcherTemplate string
 //go:embed templates/custom_bindings.go.tmpl
 var customBindingsTemplate string
 
+//go:embed templates/secrets.go.tmpl
+var secretsTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -224,6 +227,20 @@ func RenderCustomBindingStub(actionName string) (string, error) {
 		PlaceholderMsg: fmt.Sprintf("PLACEHOLDER: %s requires a custom binding", actionName),
 	}
 	return renderGoTemplate("custom_bindings.go.tmpl", customBindingsTemplate, data, nil)
+}
+
+type SecretTemplateData struct {
+	SecretEnvNames []string
+}
+
+func RenderSecretsHelpers(cli *schema.CliFile) (string, error) {
+	names := []string{}
+	for _, env := range cli.Cli.Runtime.Env {
+		if env.Secret {
+			names = append(names, env.Name)
+		}
+	}
+	return renderGoTemplate("secrets.go.tmpl", secretsTemplate, SecretTemplateData{SecretEnvNames: names}, nil)
 }
 
 func toHandlerName(action string) string {
