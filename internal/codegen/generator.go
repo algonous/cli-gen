@@ -293,7 +293,7 @@ func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
 	}
 	return renderGoTemplate("skill.go.tmpl", skillTemplate, SkillTemplateData{
 		CliName:            set.CLI.Cli.Name,
-		SkillName:          set.CLI.Cli.Name + "-api-workflow",
+		SkillName:          set.CLI.Cli.Name + "-skill",
 		SkillDescription:   buildSkillDescription(set.CLI.Cli.Name, actions),
 		TriggerHints:       buildSkillTriggerHints(actions),
 		PrimaryExampleList: buildPrimaryExamples(set.CLI.Cli.Name, actions),

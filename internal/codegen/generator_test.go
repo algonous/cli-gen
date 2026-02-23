@@ -310,7 +310,7 @@ func TestRenderSkillHandler(t *testing.T) {
 	}
 	for _, part := range []string{
 		"SKILL.md",
-		"name: github-api-workflow",
+		"name: github-skill",
 		"## Purpose",
 		"## Workflow",
 		"## Actions",
