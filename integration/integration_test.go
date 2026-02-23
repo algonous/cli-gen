@@ -161,7 +161,7 @@ func TestIntegration(t *testing.T) {
 		}
 		text := string(content)
 		if !strings.Contains(text, "# Skill") ||
-			!strings.Contains(text, "name: github-api-workflow") ||
+			!strings.Contains(text, "name: github-skill") ||
 			!strings.Contains(text, "## Workflow") ||
 			!strings.Contains(text, "### list-repo-issues") ||
 			!strings.Contains(text, "### Examples") ||
