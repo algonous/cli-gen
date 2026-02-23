@@ -1,0 +1,50 @@
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		printTopHelp()
+		os.Exit(1)
+	}
+
+	switch os.Args[1] {
+	case "-h", "--help":
+		printTopHelp()
+		os.Exit(0)
+	case "skill":
+		handleSkill(os.Args[2:])
+{{- range .Actions }}
+	case "{{ . }}":
+		handleAction{{ handlerName . }}(os.Args[2:])
+{{- end }}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
+		printTopHelp()
+		os.Exit(1)
+	}
+}
+
+func printTopHelp() {
+	fmt.Println("{{ .CliName }} - {{ .CliDescription }}")
+	fmt.Println("Usage:")
+	fmt.Println("  {{ .CliName }} <subcommand> [flags]")
+	fmt.Println("Subcommands:")
+{{- range .Actions }}
+	fmt.Println("  {{ . }}")
+{{- end }}
+	fmt.Println("  skill")
+}
+
+func handleSkill(_ []string) {
+	fmt.Println("TODO: skill output")
+}
+{{- range .Actions }}
+
+func handleAction{{ handlerName . }}(_ []string) {
+	fmt.Println("TODO: {{ . }}")
+}
+{{- end }}
