@@ -3,12 +3,11 @@ package codegen
 import (
 	"bytes"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"go/format"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -164,6 +163,9 @@ func RenderRequestBuilder(cli *schema.CliFile, action *schema.ActionFile) (strin
 	}
 	for _, h := range action.Request.Headers {
 		data.HeaderLines = append(data.HeaderLines, headerLine(h, argSet, envSet)...)
+	}
+	if cli.Cli.Runtime.Auth != nil {
+		data.HeaderLines = append(data.HeaderLines, authHeaderLines(cli.Cli.Runtime.Auth, argSet, envSet)...)
 	}
 
 	return renderGoTemplate("request_builder.go.tmpl", requestBuilderTemplate, data, nil)
@@ -520,7 +522,7 @@ func queryLine(q schema.QueryParam, argSet map[string]schema.ArgDef, envSet map[
 			if kind == "arg" {
 				arg := argSet[name]
 				field := toFieldName(name)
-				return queryLineForArg(q.Name, field, arg, q.ArrayFormat)
+				return queryLineForArg(q.Name, name, field, arg, q.ArrayFormat)
 			}
 			if kind == "env" {
 				env := envSet[name]
@@ -531,38 +533,39 @@ func queryLine(q schema.QueryParam, argSet map[string]schema.ArgDef, envSet map[
 	return []string{fmt.Sprintf("query.Add(%q, %q)", q.Name, fmt.Sprintf("%v", q.Value))}
 }
 
-func queryLineForArg(name, field string, arg schema.ArgDef, arrayFormat string) []string {
+func queryLineForArg(name, argName, field string, arg schema.ArgDef, arrayFormat string) []string {
+	present := fmt.Sprintf("parsed.Provided[%q]", argName)
 	switch arg.Type {
 	case "array":
 		switch arrayFormat {
 		case "csv":
 			return []string{
-				fmt.Sprintf("if len(parsed.%s) > 0 { query.Add(%q, strings.Join(parsed.%s, \",\")) }", field, name, field),
+				fmt.Sprintf("if %s { query.Add(%q, strings.Join(parsed.%s, \",\")) }", present, name, field),
 			}
 		case "brackets":
 			return []string{
-				fmt.Sprintf("for _, v := range parsed.%s { query.Add(%q, v) }", field, name+"[]"),
+				fmt.Sprintf("if %s { for _, v := range parsed.%s { query.Add(%q, v) } }", present, field, name+"[]"),
 			}
 		default:
 			return []string{
-				fmt.Sprintf("for _, v := range parsed.%s { query.Add(%q, v) }", field, name),
+				fmt.Sprintf("if %s { for _, v := range parsed.%s { query.Add(%q, v) } }", present, field, name),
 			}
 		}
 	case "number":
 		if arg.Required {
 			return []string{fmt.Sprintf("query.Add(%q, strconv.FormatFloat(parsed.%s, 'f', -1, 64))", name, field)}
 		}
-		return []string{fmt.Sprintf("if parsed.%s != 0 { query.Add(%q, strconv.FormatFloat(parsed.%s, 'f', -1, 64)) }", field, name, field)}
+		return []string{fmt.Sprintf("if %s { query.Add(%q, strconv.FormatFloat(parsed.%s, 'f', -1, 64)) }", present, name, field)}
 	case "boolean":
 		if arg.Required {
 			return []string{fmt.Sprintf("query.Add(%q, strconv.FormatBool(parsed.%s))", name, field)}
 		}
-		return []string{fmt.Sprintf("if parsed.%s { query.Add(%q, strconv.FormatBool(parsed.%s)) }", field, name, field)}
+		return []string{fmt.Sprintf("if %s { query.Add(%q, strconv.FormatBool(parsed.%s)) }", present, name, field)}
 	default:
 		if arg.Required {
 			return []string{fmt.Sprintf("query.Add(%q, parsed.%s)", name, field)}
 		}
-		return []string{fmt.Sprintf("if parsed.%s != \"\" { query.Add(%q, parsed.%s) }", field, name, field)}
+		return []string{fmt.Sprintf("if %s { query.Add(%q, parsed.%s) }", present, name, field)}
 	}
 }
 
@@ -582,15 +585,16 @@ func headerLine(h schema.Header, argSet map[string]schema.ArgDef, envSet map[str
 				if arg.Required {
 					return []string{fmt.Sprintf("req.Header.Set(%q, fmt.Sprintf(\"%%v\", parsed.%s))", h.Name, field)}
 				}
+				present := fmt.Sprintf("parsed.Provided[%q]", name)
 				switch arg.Type {
 				case "number":
-					return []string{fmt.Sprintf("if parsed.%s != 0 { req.Header.Set(%q, fmt.Sprintf(\"%%v\", parsed.%s)) }", field, h.Name, field)}
+					return []string{fmt.Sprintf("if %s { req.Header.Set(%q, fmt.Sprintf(\"%%v\", parsed.%s)) }", present, h.Name, field)}
 				case "boolean":
-					return []string{fmt.Sprintf("if parsed.%s { req.Header.Set(%q, fmt.Sprintf(\"%%v\", parsed.%s)) }", field, h.Name, field)}
+					return []string{fmt.Sprintf("if %s { req.Header.Set(%q, fmt.Sprintf(\"%%v\", parsed.%s)) }", present, h.Name, field)}
 				case "array":
-					return []string{fmt.Sprintf("if len(parsed.%s) > 0 { req.Header.Set(%q, strings.Join(parsed.%s, \",\")) }", field, h.Name, field)}
+					return []string{fmt.Sprintf("if %s { req.Header.Set(%q, strings.Join(parsed.%s, \",\")) }", present, h.Name, field)}
 				default:
-					return []string{fmt.Sprintf("if parsed.%s != \"\" { req.Header.Set(%q, parsed.%s) }", field, h.Name, field)}
+					return []string{fmt.Sprintf("if %s { req.Header.Set(%q, parsed.%s) }", present, h.Name, field)}
 				}
 			}
 			if kind == "env" {
@@ -603,6 +607,41 @@ func headerLine(h schema.Header, argSet map[string]schema.ArgDef, envSet map[str
 		}
 	}
 	return []string{fmt.Sprintf("req.Header.Set(%q, %q)", h.Name, fmt.Sprintf("%v", h.Value))}
+}
+
+func authHeaderLines(auth *schema.AuthDef, argSet map[string]schema.ArgDef, envSet map[string]schema.EnvEntry) []string {
+	if auth == nil || auth.Header == "" || auth.Template == "" {
+		return nil
+	}
+	expr := strconv.Quote(auth.Template)
+	skips := []string{}
+	for _, ph := range extractDirectPlaceholders(auth.Template) {
+		kind, name, ok := parseInlinePlaceholder(ph)
+		if !ok {
+			continue
+		}
+		if kind == "env" {
+			repl := fmt.Sprintf("envs[%q]", name)
+			expr = fmt.Sprintf("strings.ReplaceAll(%s, %q, %s)", expr, ph, repl)
+			if env, ok := envSet[name]; ok && !env.Required {
+				skips = append(skips, fmt.Sprintf("envs[%q] == \"\"", name))
+			}
+		}
+		if kind == "arg" {
+			field := toFieldName(name)
+			repl := fmt.Sprintf("fmt.Sprintf(\"%%v\", parsed.%s)", field)
+			expr = fmt.Sprintf("strings.ReplaceAll(%s, %q, %s)", expr, ph, repl)
+			if arg, ok := argSet[name]; ok && !arg.Required {
+				skips = append(skips, fmt.Sprintf("!parsed.Provided[%q]", name))
+			}
+		}
+	}
+	if len(skips) == 0 {
+		return []string{fmt.Sprintf("req.Header.Set(%q, %s)", auth.Header, expr)}
+	}
+	return []string{
+		fmt.Sprintf("if !(%s) { req.Header.Set(%q, %s) }", strings.Join(skips, " || "), auth.Header, expr),
+	}
 }
 
 func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, root string) []string {
@@ -625,7 +664,7 @@ func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, roo
 						lines = append(lines, fmt.Sprintf("%s[%q] = []any{}", root, key))
 						lines = append(lines, fmt.Sprintf("for _, v := range %s { %s[%q] = append(%s[%q].([]any), v) }", field, root, key, root, key))
 					} else {
-						lines = append(lines, fmt.Sprintf("if len(%s) > 0 {", field))
+						lines = append(lines, fmt.Sprintf("if parsed.Provided[%q] {", name))
 						lines = append(lines, fmt.Sprintf("  %s[%q] = []any{}", root, key))
 						lines = append(lines, fmt.Sprintf("  for _, v := range %s { %s[%q] = append(%s[%q].([]any), v) }", field, root, key, root, key))
 						lines = append(lines, "}")
@@ -634,19 +673,19 @@ func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, roo
 					if arg.Required {
 						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
 					} else {
-						lines = append(lines, fmt.Sprintf("if %s { %s[%q] = %s }", field, root, key, field))
+						lines = append(lines, fmt.Sprintf("if parsed.Provided[%q] { %s[%q] = %s }", name, root, key, field))
 					}
 				case "number":
 					if arg.Required {
 						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
 					} else {
-						lines = append(lines, fmt.Sprintf("if %s != 0 { %s[%q] = %s }", field, root, key, field))
+						lines = append(lines, fmt.Sprintf("if parsed.Provided[%q] { %s[%q] = %s }", name, root, key, field))
 					}
 				default:
 					if arg.Required {
 						lines = append(lines, fmt.Sprintf("%s[%q] = %s", root, key, field))
 					} else {
-						lines = append(lines, fmt.Sprintf("if %s != \"\" { %s[%q] = %s }", field, root, key, field))
+						lines = append(lines, fmt.Sprintf("if parsed.Provided[%q] { %s[%q] = %s }", name, root, key, field))
 					}
 				}
 				continue
@@ -655,33 +694,4 @@ func buildTemplateAssignments(template any, argSet map[string]schema.ArgDef, roo
 		lines = append(lines, fmt.Sprintf("%s[%q] = %#v", root, key, value))
 	}
 	return lines
-}
-
-type Envelope struct {
-	OK       bool   `json:"ok"`
-	Status   int    `json:"status"`
-	Body     any    `json:"body,omitempty"`
-	BodyText string `json:"body_text,omitempty"`
-}
-
-func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) (Envelope, error) {
-	ok := false
-	for _, code := range successStatuses {
-		if resp.StatusCode == code {
-			ok = true
-			break
-		}
-	}
-	env := Envelope{OK: ok, Status: resp.StatusCode}
-	if len(body) == 0 {
-		env.BodyText = ""
-		return env, nil
-	}
-	var parsed any
-	if err := json.Unmarshal(body, &parsed); err == nil {
-		env.Body = parsed
-		return env, nil
-	}
-	env.BodyText = string(body)
-	return env, nil
 }

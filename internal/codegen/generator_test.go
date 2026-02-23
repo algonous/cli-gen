@@ -1,11 +1,8 @@
 package codegen
 
 import (
-	"bytes"
-	"encoding/json"
 	"go/parser"
 	"go/token"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -32,7 +29,7 @@ func TestRenderMain(t *testing.T) {
 			t.Fatalf("rendered output missing %q", part)
 		}
 	}
-	if !strings.Contains(out, `flag.String("log-file"`) {
+	if !strings.Contains(out, `fs.String("log-file"`) {
 		t.Fatalf("rendered main missing --log-file flag")
 	}
 
@@ -79,8 +76,10 @@ func TestRenderRequestBuilder(t *testing.T) {
 				Env: []schema.EnvEntry{
 					{Name: "GITHUB_BASE_URL", Required: true},
 					{Name: "GITHUB_DEBUG_TRACE", Required: false},
+					{Name: "GITHUB_TOKEN", Required: true, Secret: true},
 				},
 				BaseURL: schema.BaseURLDef{FromEnv: "GITHUB_BASE_URL"},
+				Auth:    &schema.AuthDef{Header: "Authorization", Template: "Bearer {env.GITHUB_TOKEN}"},
 			},
 		},
 	}
@@ -117,6 +116,7 @@ func TestRenderRequestBuilder(t *testing.T) {
 		`for _, v := range parsed.Labels`,
 		`req.Header.Set("X-GitHub-Api-Version", "2022-11-28")`,
 		`if v, ok := envs["GITHUB_DEBUG_TRACE"]`,
+		`req.Header.Set("Authorization"`,
 	} {
 		if !strings.Contains(out, part) {
 			t.Fatalf("rendered output missing %q", part)
@@ -195,49 +195,6 @@ func TestRenderExecutor(t *testing.T) {
 	}
 }
 
-func TestBuildEnvelope(t *testing.T) {
-	cases := []struct {
-		name   string
-		status int
-		body   string
-		ok     bool
-		hasB   bool
-		hasTxt bool
-	}{
-		{name: "success json", status: 200, body: `{"id":1}`, ok: true, hasB: true},
-		{name: "error json", status: 404, body: `{"message":"not found"}`, ok: false, hasB: true},
-		{name: "error text", status: 500, body: `internal error`, ok: false, hasTxt: true},
-		{name: "success empty", status: 204, body: ``, ok: true, hasTxt: true},
-		{name: "success text", status: 200, body: `OK`, ok: true, hasTxt: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			resp := &http.Response{StatusCode: tc.status}
-			env, err := BuildEnvelope([]int{200, 204}, resp, []byte(tc.body))
-			if err != nil {
-				t.Fatalf("BuildEnvelope error: %v", err)
-			}
-			if env.OK != tc.ok {
-				t.Fatalf("ok=%v want=%v", env.OK, tc.ok)
-			}
-			if tc.hasB && env.Body == nil {
-				t.Fatal("expected body")
-			}
-			if tc.hasTxt && env.BodyText == "" && tc.body != "" {
-				t.Fatal("expected body_text")
-			}
-
-			encoded, err := json.Marshal(env)
-			if err != nil {
-				t.Fatalf("marshal envelope: %v", err)
-			}
-			if !bytes.Contains(encoded, []byte(`"status"`)) {
-				t.Fatalf("invalid envelope json: %s", encoded)
-			}
-		})
-	}
-}
-
 func TestRenderCustomDispatcher(t *testing.T) {
 	out, err := RenderCustomDispatcher("create-or-update-file")
 	if err != nil {
@@ -299,6 +256,22 @@ func TestRenderLogFileHelper(t *testing.T) {
 		t.Fatalf("missing os.OpenFile in log helper: %s", out)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), "generated_logfile.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestRenderRuntimeHelpers(t *testing.T) {
+	out, err := RenderRuntimeHelpers()
+	if err != nil {
+		t.Fatalf("RenderRuntimeHelpers error: %v", err)
+	}
+	if !strings.Contains(out, `json:"body_text"`) {
+		t.Fatalf("body_text field tag missing: %s", out)
+	}
+	if strings.Contains(out, `json:"body_text,omitempty"`) {
+		t.Fatalf("body_text should not use omitempty: %s", out)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_runtime_helpers.go", out, parser.AllErrors); err != nil {
 		t.Fatalf("generated code is not valid Go: %v", err)
 	}
 }

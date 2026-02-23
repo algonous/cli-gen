@@ -55,6 +55,9 @@ func handleSkill(args []string) {
 {{- range .Actions }}
 	fmt.Fprintln(f, "action: {{ .Name }}")
 	fmt.Fprintln(f, "description: {{ .Description }}")
+{{- range .Args }}
+	fmt.Fprintln(f, "  --{{ .Name }} ({{ .Type }}): {{ .Help }}")
+{{- end }}
 {{- end }}
 
 	absPath, _ := filepath.Abs(*outputPath)

@@ -12,7 +12,7 @@ type envelope struct {
 	OK       bool   `json:"ok"`
 	Status   int    `json:"status"`
 	Body     any    `json:"body,omitempty"`
-	BodyText string `json:"body_text,omitempty"`
+	BodyText string `json:"body_text"`
 }
 
 type arrayFlag []string

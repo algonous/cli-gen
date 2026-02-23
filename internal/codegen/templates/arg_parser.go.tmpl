@@ -11,6 +11,7 @@ type {{ .HandlerSuffix }}Args struct {
 {{- range .Args }}
 	{{ fieldName .Name }} {{ if eq .Type "number" }}float64{{ else if eq .Type "boolean" }}bool{{ else if eq .Type "array" }}[]string{{ else }}string{{ end }}
 {{- end }}
+	Provided map[string]bool
 }
 
 func parseArgs{{ .HandlerSuffix }}(args []string) {{ .HandlerSuffix }}Args {
@@ -46,6 +47,7 @@ func parseArgs{{ .HandlerSuffix }}(args []string) {{ .HandlerSuffix }}Args {
 
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	parsed.Provided = set
 {{- range .RequiredFlagSet }}
 	if !set["{{ . }}"] {
 		fmt.Fprintf(os.Stderr, "error: required flag --%s not provided\n", "{{ . }}")
