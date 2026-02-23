@@ -302,3 +302,26 @@ func TestRenderLogFileHelper(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v", err)
 	}
 }
+
+func TestRenderSkillHandler(t *testing.T) {
+	set := &schema.SchemaSet{
+		CLI: &schema.CliFile{Cli: schema.CliDef{Name: "github"}},
+		Actions: []*schema.ActionFile{
+			{Name: "list-repo-issues", Description: "List issues", Args: []schema.ArgDef{{Name: "owner", Type: "string", Help: "owner"}}},
+			{Name: "create-issue", Description: "Create issue", Args: []schema.ArgDef{{Name: "repo", Type: "string", Help: "repo"}}},
+			{Name: "create-or-update-file", Description: "Create file"},
+		},
+	}
+	out, err := RenderSkillHandler(set)
+	if err != nil {
+		t.Fatalf("RenderSkillHandler error: %v", err)
+	}
+	for _, part := range []string{"list-repo-issues", "create-issue", "create-or-update-file", "skill_written"} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("rendered output missing %q", part)
+		}
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_skill.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}

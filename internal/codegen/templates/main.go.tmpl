@@ -43,10 +43,6 @@ func printTopHelp() {
 {{- end }}
 	fmt.Println("  skill")
 }
-
-func handleSkill(_ []string) {
-	fmt.Println("TODO: skill output")
-}
 {{- range .Actions }}
 
 func handleAction{{ handlerName . }}(_ []string) {

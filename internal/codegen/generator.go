@@ -56,6 +56,9 @@ var secretsTemplate string
 //go:embed templates/logfile.go.tmpl
 var logfileTemplate string
 
+//go:embed templates/skill.go.tmpl
+var skillTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -248,6 +251,32 @@ func RenderSecretsHelpers(cli *schema.CliFile) (string, error) {
 
 func RenderLogFileHelper() (string, error) {
 	return renderGoTemplate("logfile.go.tmpl", logfileTemplate, nil, nil)
+}
+
+type SkillActionData struct {
+	Name        string
+	Description string
+	Args        []schema.ArgDef
+}
+
+type SkillTemplateData struct {
+	CliName string
+	Actions []SkillActionData
+}
+
+func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
+	actions := make([]SkillActionData, 0, len(set.Actions))
+	for _, a := range set.Actions {
+		actions = append(actions, SkillActionData{
+			Name:        a.Name,
+			Description: a.Description,
+			Args:        a.Args,
+		})
+	}
+	return renderGoTemplate("skill.go.tmpl", skillTemplate, SkillTemplateData{
+		CliName: set.CLI.Cli.Name,
+		Actions: actions,
+	}, nil)
 }
 
 func toHandlerName(action string) string {

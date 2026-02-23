@@ -1,0 +1,73 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type skillWrittenEvent struct {
+	Event     string   `json:"event"`
+	Timestamp string   `json:"timestamp"`
+	Path      string   `json:"path"`
+	Actions   []string `json:"actions"`
+}
+
+func handleSkill(args []string) {
+	fs := flag.NewFlagSet("skill", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	outputPath := fs.String("output", "", "output path")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+
+	actions := []string{
+{{- range .Actions }}
+		"{{ .Name }}",
+{{- end }}
+	}
+
+	if *outputPath == "" {
+{{- range .Actions }}
+		fmt.Println("action: {{ .Name }}")
+		fmt.Println("description: {{ .Description }}")
+{{- range .Args }}
+		fmt.Println("  --{{ .Name }} ({{ .Type }}): {{ .Help }}")
+{{- end }}
+{{- end }}
+		return
+	}
+
+	if err := os.MkdirAll(*outputPath, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	contentPath := filepath.Join(*outputPath, "skill.txt")
+	f, err := os.Create(contentPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+{{- range .Actions }}
+	fmt.Fprintln(f, "action: {{ .Name }}")
+	fmt.Fprintln(f, "description: {{ .Description }}")
+{{- end }}
+
+	absPath, _ := filepath.Abs(*outputPath)
+	event := skillWrittenEvent{
+		Event:     "skill_written",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Path:      absPath,
+		Actions:   actions,
+	}
+	line, err := json.Marshal(event)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	os.Stdout.Write(append(line, '\n'))
+}
