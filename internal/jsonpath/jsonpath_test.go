@@ -32,35 +32,35 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
-		invalid := []struct {
-			name string
-			expr string
-			want string // substring of error message
-		}{
-			{"empty string", "", "empty expression"},
-			{"no dollar", "abc", "must start with $"},
-			{"recursive descent", "$..name", "recursive descent"},
-			{"filter", "$.items[?(@.x>1)]", "filter"},
-			{"function", "$.length()", "invalid JSONPath syntax"},
-			{"negative index", "$[-1]", "negative array indices"},
-			{"union", "$[1,2]", "union"},
-			{"slice", "$[1:3]", "slice"},
-			{"dot key invalid", "$.foo-bar", "invalid JSONPath syntax"},
-		}
-
-		for _, tc := range invalid {
-			t.Run(tc.name, func(t *testing.T) {
-				err := Validate(tc.expr)
-				if err == nil {
-					t.Errorf("Validate(%q) expected error, got nil", tc.expr)
-					return
-				}
-				if !strings.Contains(err.Error(), tc.want) {
-					t.Errorf("Validate(%q) error = %q, want substring %q", tc.expr, err.Error(), tc.want)
-				}
-			})
-		}
+	invalid := []struct {
+		name string
+		expr string
+		want string // substring of error message
+	}{
+		{"empty string", "", "empty expression"},
+		{"no dollar", "abc", "must start with $"},
+		{"recursive descent", "$..name", "recursive descent"},
+		{"filter", "$.items[?(@.x>1)]", "filter"},
+		{"function", "$.length()", "invalid JSONPath syntax"},
+		{"negative index", "$[-1]", "negative array indices"},
+		{"union", "$[1,2]", "union"},
+		{"slice", "$[1:3]", "slice"},
+		{"dot key invalid", "$.foo-bar", "invalid JSONPath syntax"},
 	}
+
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.expr)
+			if err == nil {
+				t.Errorf("Validate(%q) expected error, got nil", tc.expr)
+				return
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Validate(%q) error = %q, want substring %q", tc.expr, err.Error(), tc.want)
+			}
+		})
+	}
+}
 
 func TestExtract(t *testing.T) {
 	tests := []struct {
@@ -111,24 +111,24 @@ func TestExtract(t *testing.T) {
 			expr: "$.a.b[0].c",
 			want: "found",
 		},
-			{
-				name: "bracket quoted key",
-				data: map[string]any{"foo-bar": "baz"},
-				expr: "$['foo-bar']",
-				want: "baz",
-			},
-			{
-				name: "bracket quoted key escaped quote",
-				data: map[string]any{"a'b": "quoted"},
-				expr: "$['a\\'b']",
-				want: "quoted",
-			},
-			{
-				name: "bracket quoted key escaped backslash",
-				data: map[string]any{"a\\b": "slash"},
-				expr: "$['a\\\\b']",
-				want: "slash",
-			},
+		{
+			name: "bracket quoted key",
+			data: map[string]any{"foo-bar": "baz"},
+			expr: "$['foo-bar']",
+			want: "baz",
+		},
+		{
+			name: "bracket quoted key escaped quote",
+			data: map[string]any{"a'b": "quoted"},
+			expr: "$['a\\'b']",
+			want: "quoted",
+		},
+		{
+			name: "bracket quoted key escaped backslash",
+			data: map[string]any{"a\\b": "slash"},
+			expr: "$['a\\\\b']",
+			want: "slash",
+		},
 		{
 			name: "root is array",
 			data: []any{1.0, 2.0},
