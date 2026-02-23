@@ -263,11 +263,19 @@ type SkillActionData struct {
 	Name        string
 	Description string
 	Args        []schema.ArgDef
+	Method      string
+	Path        string
+	References  []string
+	Examples    []string
 }
 
 type SkillTemplateData struct {
-	CliName string
-	Actions []SkillActionData
+	CliName            string
+	SkillName          string
+	SkillDescription   string
+	TriggerHints       string
+	Actions            []SkillActionData
+	PrimaryExampleList []string
 }
 
 func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
@@ -277,12 +285,203 @@ func RenderSkillHandler(set *schema.SchemaSet) (string, error) {
 			Name:        a.Name,
 			Description: a.Description,
 			Args:        a.Args,
+			Method:      a.Request.Method,
+			Path:        a.Request.Path,
+			References:  a.References,
+			Examples:    buildSkillExamples(set.CLI.Cli.Name, a),
 		})
 	}
 	return renderGoTemplate("skill.go.tmpl", skillTemplate, SkillTemplateData{
-		CliName: set.CLI.Cli.Name,
-		Actions: actions,
+		CliName:            set.CLI.Cli.Name,
+		SkillName:          set.CLI.Cli.Name + "-api-workflow",
+		SkillDescription:   buildSkillDescription(set.CLI.Cli.Name, actions),
+		TriggerHints:       buildSkillTriggerHints(actions),
+		PrimaryExampleList: buildPrimaryExamples(set.CLI.Cli.Name, actions),
+		Actions:            actions,
 	}, nil)
+}
+
+func buildSkillExamples(cliName string, action *schema.ActionFile) []string {
+	baseArgs := map[string][]string{}
+	for _, arg := range action.Args {
+		baseArgs[arg.Name] = sampleArgValues(arg.Name, arg.Type)
+	}
+
+	requiredOnly := []string{}
+	for _, arg := range action.Args {
+		if arg.Required {
+			requiredOnly = append(requiredOnly, arg.Name)
+		}
+	}
+
+	examples := []string{buildSkillCommand(cliName, action.Name, requiredOnly, baseArgs)}
+
+	// For repository contents endpoints, include both root listing and file read examples.
+	if strings.Contains(action.Request.Path, "/contents") && hasArg(action.Args, "owner") && hasArg(action.Args, "repo") {
+		if strings.Contains(action.Name, "list") && hasArg(action.Args, "path") {
+			overrides := copyArgValues(baseArgs)
+			overrides["path"] = []string{""}
+			examples = appendUniqueExample(examples, buildSkillCommand(cliName, action.Name, []string{"owner", "repo", "path"}, overrides))
+		}
+		if hasOptionalArg(action.Args, "path") {
+			examples = appendUniqueExample(examples, buildSkillCommand(cliName, action.Name, []string{"owner", "repo"}, baseArgs))
+		}
+		if hasArg(action.Args, "path") {
+			examples = appendUniqueExample(examples, buildSkillCommand(cliName, action.Name, []string{"owner", "repo", "path"}, baseArgs))
+		}
+	}
+
+	// For issue creation endpoints, include a complete issue sample with title/body.
+	if strings.EqualFold(action.Request.Method, "POST") && strings.Contains(action.Request.Path, "/issues") {
+		argNames := []string{"owner", "repo", "title"}
+		if hasArg(action.Args, "body") {
+			argNames = append(argNames, "body")
+		}
+		examples = appendUniqueExample(examples, buildSkillCommand(cliName, action.Name, argNames, baseArgs))
+	}
+
+	return examples
+}
+
+func appendUniqueExample(examples []string, candidate string) []string {
+	if candidate == "" {
+		return examples
+	}
+	for _, e := range examples {
+		if e == candidate {
+			return examples
+		}
+	}
+	return append(examples, candidate)
+}
+
+func copyArgValues(values map[string][]string) map[string][]string {
+	out := map[string][]string{}
+	for k, v := range values {
+		cp := make([]string, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out
+}
+
+func buildSkillCommand(cliName, actionName string, argOrder []string, values map[string][]string) string {
+	parts := []string{cliName, actionName}
+	for _, argName := range argOrder {
+		argValues := values[argName]
+		if len(argValues) == 0 {
+			continue
+		}
+		for _, v := range argValues {
+			parts = append(parts, "--"+argName, shellQuote(v))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func hasArg(args []schema.ArgDef, name string) bool {
+	for _, arg := range args {
+		if arg.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOptionalArg(args []schema.ArgDef, name string) bool {
+	for _, arg := range args {
+		if arg.Name == name {
+			return !arg.Required
+		}
+	}
+	return false
+}
+
+func sampleArgValues(name, typ string) []string {
+	switch name {
+	case "owner":
+		return []string{"algonous"}
+	case "repo":
+		return []string{"cli-gen"}
+	case "path":
+		return []string{"README.md"}
+	case "title":
+		return []string{"Automated issue from generated CLI"}
+	case "body":
+		return []string{"This issue is created by the generated CLI skill example."}
+	case "labels":
+		return []string{"bug", "api"}
+	case "state":
+		return []string{"open"}
+	case "ref":
+		return []string{"main"}
+	case "page":
+		return []string{"1"}
+	case "per_page":
+		return []string{"30"}
+	}
+
+	switch typ {
+	case "array":
+		return []string{"item1", "item2"}
+	case "number":
+		return []string{"1"}
+	case "boolean":
+		return []string{"true"}
+	case "json":
+		return []string{`{"example":"value"}`}
+	default:
+		return []string{"example"}
+	}
+}
+
+func shellQuote(v string) string {
+	if v == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+func buildSkillDescription(cliName string, actions []SkillActionData) string {
+	actionNames := make([]string, 0, len(actions))
+	for _, a := range actions {
+		actionNames = append(actionNames, a.Name)
+	}
+	return fmt.Sprintf("Use this skill to operate `%s` for GitHub REST tasks. Trigger when users ask to run these actions: %s.", cliName, strings.Join(actionNames, ", "))
+}
+
+func buildSkillTriggerHints(actions []SkillActionData) string {
+	hints := []string{}
+	for _, a := range actions {
+		if strings.Contains(a.Name, "list") && strings.Contains(a.Name, "file") {
+			hints = append(hints, "list files in a repository")
+		}
+		if strings.Contains(a.Name, "read") && strings.Contains(a.Name, "file") {
+			hints = append(hints, "read file contents from a repository")
+		}
+		if strings.Contains(a.Name, "create-issue") || (strings.Contains(a.Name, "issue") && strings.Contains(a.Name, "create")) {
+			hints = append(hints, "create an issue")
+		}
+	}
+	if len(hints) == 0 {
+		return "call GitHub API actions with deterministic CLI commands"
+	}
+	return strings.Join(hints, "; ")
+}
+
+func buildPrimaryExamples(cliName string, actions []SkillActionData) []string {
+	examples := []string{}
+	for _, a := range actions {
+		switch {
+		case strings.Contains(a.Name, "list") && strings.Contains(a.Name, "file"):
+			examples = appendUniqueExample(examples, fmt.Sprintf("%s %s --owner 'algonous' --repo 'cli-gen' --path ''", cliName, a.Name))
+		case strings.Contains(a.Name, "read") && strings.Contains(a.Name, "file"):
+			examples = appendUniqueExample(examples, fmt.Sprintf("%s %s --owner 'algonous' --repo 'cli-gen' --path 'README.md'", cliName, a.Name))
+		case strings.Contains(a.Name, "issue") && strings.Contains(a.Name, "create"):
+			examples = appendUniqueExample(examples, fmt.Sprintf("%s %s --owner 'algonous' --repo 'cli-gen' --title 'Skill test issue' --body 'Created during SKILL.md validation run.'", cliName, a.Name))
+		}
+	}
+	return examples
 }
 
 type ActionHandlerData struct {

@@ -150,6 +150,24 @@ func TestIntegration(t *testing.T) {
 		if event["event"] != "skill_written" {
 			t.Fatalf("unexpected event: %v", event)
 		}
+		path, ok := event["path"].(string)
+		if !ok || !strings.HasSuffix(path, "SKILL.md") {
+			t.Fatalf("unexpected skill path: %v", event["path"])
+		}
+		contentPath := filepath.Join(outPath, "SKILL.md")
+		content, err := os.ReadFile(contentPath)
+		if err != nil {
+			t.Fatalf("expected SKILL.md to be written: %v", err)
+		}
+		text := string(content)
+		if !strings.Contains(text, "# Skill") ||
+			!strings.Contains(text, "name: github-api-workflow") ||
+			!strings.Contains(text, "## Workflow") ||
+			!strings.Contains(text, "### list-repo-issues") ||
+			!strings.Contains(text, "### Examples") ||
+			!strings.Contains(text, "github list-repo-issues --owner 'algonous' --repo 'cli-gen'") {
+			t.Fatalf("unexpected SKILL.md content: %s", text)
+		}
 	})
 
 	t.Run("T23f log-file", func(t *testing.T) {

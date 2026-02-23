@@ -280,9 +280,23 @@ func TestRenderSkillHandler(t *testing.T) {
 	set := &schema.SchemaSet{
 		CLI: &schema.CliFile{Cli: schema.CliDef{Name: "github"}},
 		Actions: []*schema.ActionFile{
-			{Name: "list-repo-issues", Description: "List issues", Args: []schema.ArgDef{{Name: "owner", Type: "string", Help: "owner"}}},
-			{Name: "create-issue", Description: "Create issue", Args: []schema.ArgDef{{Name: "repo", Type: "string", Help: "repo"}}},
-			{Name: "create-or-update-file", Description: "Create file"},
+			{
+				Name:        "list-repo-issues",
+				Description: "List issues",
+				Request:     schema.RequestDef{Method: "GET", Path: "/repos/{arg.owner}/{arg.repo}/issues"},
+				Args:        []schema.ArgDef{{Name: "owner", Type: "string", Help: "owner"}},
+			},
+			{
+				Name:        "create-issue",
+				Description: "Create issue",
+				Request:     schema.RequestDef{Method: "POST", Path: "/repos/{arg.owner}/{arg.repo}/issues"},
+				Args:        []schema.ArgDef{{Name: "repo", Type: "string", Help: "repo"}},
+			},
+			{
+				Name:        "create-or-update-file",
+				Description: "Create file",
+				Request:     schema.RequestDef{Method: "PUT", Path: "/repos/{arg.owner}/{arg.repo}/contents/{arg.path}"},
+			},
 		},
 	}
 	out, err := RenderSkillHandler(set)
@@ -290,6 +304,22 @@ func TestRenderSkillHandler(t *testing.T) {
 		t.Fatalf("RenderSkillHandler error: %v", err)
 	}
 	for _, part := range []string{"list-repo-issues", "create-issue", "create-or-update-file", "skill_written"} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("rendered output missing %q", part)
+		}
+	}
+	for _, part := range []string{
+		"SKILL.md",
+		"name: github-api-workflow",
+		"## Purpose",
+		"## Workflow",
+		"## Actions",
+		"### list-repo-issues",
+		"### Arguments",
+		"### Examples",
+		"- Endpoint: `GET /repos/{arg.owner}/{arg.repo}/issues`",
+		"## Output Contract",
+	} {
 		if !strings.Contains(out, part) {
 			t.Fatalf("rendered output missing %q", part)
 		}

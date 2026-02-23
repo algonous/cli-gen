@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,97 @@ type skillWrittenEvent struct {
 	Timestamp string   `json:"timestamp"`
 	Path      string   `json:"path"`
 	Actions   []string `json:"actions"`
+}
+
+func writeSkillContent(w io.Writer) {
+	fmt.Fprintln(w, "---")
+	fmt.Fprintln(w, "name: {{ .SkillName }}")
+	fmt.Fprintln(w, "description: \"{{ .SkillDescription }}\"")
+	fmt.Fprintln(w, "---")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "# Skill")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Generated skill guide for `{{ .CliName }}`.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## Purpose")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- Provide deterministic commands for GitHub REST operations exposed by `{{ .CliName }}`.")
+	fmt.Fprintln(w, "- Keep execution aligned with schema-defined actions and arguments.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## When to Use")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- Trigger phrases include: {{ .TriggerHints }}.")
+	fmt.Fprintln(w, "- Use this skill when the user needs one of the listed actions, not ad-hoc curl scripts.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## Inputs Required")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- Runtime env: `GITHUB_BASE_URL`, `GITHUB_TOKEN`.")
+	fmt.Fprintln(w, "- Action arguments documented under each action section.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## Workflow")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "1. Select the target action that matches user intent.")
+	fmt.Fprintln(w, "2. Collect required arguments and optional filters.")
+	fmt.Fprintln(w, "3. Run the command and parse the single-line JSON envelope.")
+	fmt.Fprintln(w, "4. Report extracted results and include API error details when `ok=false`.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## Primary Examples")
+	fmt.Fprintln(w, "")
+{{- if .PrimaryExampleList }}
+{{- range .PrimaryExampleList }}
+	fmt.Fprintln(w, "```bash")
+	fmt.Fprintln(w, "{{ . }}")
+	fmt.Fprintln(w, "```")
+	fmt.Fprintln(w, "")
+{{- end }}
+{{- else }}
+	fmt.Fprintln(w, "_No primary examples auto-generated for this schema._")
+	fmt.Fprintln(w, "")
+{{- end }}
+	fmt.Fprintln(w, "## Actions")
+	fmt.Fprintln(w, "")
+{{- range .Actions }}
+	fmt.Fprintln(w, "### {{ .Name }}")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "{{ .Description }}")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- Endpoint: `{{ .Method }} {{ .Path }}`")
+{{- if .References }}
+	fmt.Fprintln(w, "- References:")
+{{- range .References }}
+	fmt.Fprintln(w, "  - {{ . }}")
+{{- end }}
+{{- end }}
+	fmt.Fprintln(w, "")
+{{- if .Args }}
+	fmt.Fprintln(w, "### Arguments")
+	fmt.Fprintln(w, "")
+{{- range .Args }}
+	fmt.Fprintln(w, "- `--{{ .Name }}` ({{ .Type }}): {{ .Help }}")
+{{- end }}
+	fmt.Fprintln(w, "")
+{{- end }}
+{{- if .Examples }}
+	fmt.Fprintln(w, "### Examples")
+	fmt.Fprintln(w, "")
+{{- range .Examples }}
+	fmt.Fprintln(w, "```bash")
+	fmt.Fprintln(w, "{{ . }}")
+	fmt.Fprintln(w, "```")
+	fmt.Fprintln(w, "")
+{{- end }}
+{{- end }}
+{{- end }}
+	fmt.Fprintln(w, "## Failure Handling")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- If command exits non-zero, inspect JSON output fields `status`, `body`, and `body_text`.")
+	fmt.Fprintln(w, "- If auth fails, verify token scope and expiration before retrying.")
+	fmt.Fprintln(w, "- For transient API errors, retry with the same deterministic command and unchanged args.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "## Output Contract")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "- API actions emit exactly one JSON line: `ok`, `status`, and `body` or `body_text`.")
+	fmt.Fprintln(w, "- `skill --output <dir>` writes `SKILL.md` and prints a `skill_written` JSON event.")
 }
 
 func handleSkill(args []string) {
@@ -31,13 +123,7 @@ func handleSkill(args []string) {
 	}
 
 	if *outputPath == "" {
-{{- range .Actions }}
-		fmt.Println("action: {{ .Name }}")
-		fmt.Println("description: {{ .Description }}")
-{{- range .Args }}
-		fmt.Println("  --{{ .Name }} ({{ .Type }}): {{ .Help }}")
-{{- end }}
-{{- end }}
+		writeSkillContent(os.Stdout)
 		return
 	}
 
@@ -45,22 +131,16 @@ func handleSkill(args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	contentPath := filepath.Join(*outputPath, "skill.txt")
+	contentPath := filepath.Join(*outputPath, "SKILL.md")
 	f, err := os.Create(contentPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 	defer f.Close()
-{{- range .Actions }}
-	fmt.Fprintln(f, "action: {{ .Name }}")
-	fmt.Fprintln(f, "description: {{ .Description }}")
-{{- range .Args }}
-	fmt.Fprintln(f, "  --{{ .Name }} ({{ .Type }}): {{ .Help }}")
-{{- end }}
-{{- end }}
+	writeSkillContent(f)
 
-	absPath, _ := filepath.Abs(*outputPath)
+	absPath, _ := filepath.Abs(contentPath)
 	event := skillWrittenEvent{
 		Event:     "skill_written",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
