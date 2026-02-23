@@ -32,6 +32,9 @@ func TestRenderMain(t *testing.T) {
 			t.Fatalf("rendered output missing %q", part)
 		}
 	}
+	if !strings.Contains(out, `flag.String("log-file"`) {
+		t.Fatalf("rendered main missing --log-file flag")
+	}
 
 	if _, err := parser.ParseFile(token.NewFileSet(), "generated_main.go", out, parser.AllErrors); err != nil {
 		t.Fatalf("generated code is not valid Go: %v", err)
@@ -283,6 +286,19 @@ func TestRenderSecretsHelpers(t *testing.T) {
 		t.Fatalf("non-secret env should not be in switch: %s", out)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), "generated_secrets.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestRenderLogFileHelper(t *testing.T) {
+	out, err := RenderLogFileHelper()
+	if err != nil {
+		t.Fatalf("RenderLogFileHelper error: %v", err)
+	}
+	if !strings.Contains(out, "os.OpenFile") {
+		t.Fatalf("missing os.OpenFile in log helper: %s", out)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_logfile.go", out, parser.AllErrors); err != nil {
 		t.Fatalf("generated code is not valid Go: %v", err)
 	}
 }

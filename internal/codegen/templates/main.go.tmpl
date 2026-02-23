@@ -1,31 +1,36 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	logFile := flag.String("log-file", "", "append JSONL output to file")
+	flag.Parse()
+	args := flag.Args()
+	if len(args) < 1 {
 		printTopHelp()
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
+	switch args[0] {
 	case "-h", "--help":
 		printTopHelp()
 		os.Exit(0)
 	case "skill":
-		handleSkill(os.Args[2:])
+		handleSkill(args[1:])
 {{- range .Actions }}
 	case "{{ . }}":
-		handleAction{{ handlerName . }}(os.Args[2:])
+		handleAction{{ handlerName . }}(args[1:])
 {{- end }}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
 		printTopHelp()
 		os.Exit(1)
 	}
+	_ = logFile
 }
 
 func printTopHelp() {

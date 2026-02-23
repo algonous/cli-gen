@@ -53,6 +53,9 @@ var customBindingsTemplate string
 //go:embed templates/secrets.go.tmpl
 var secretsTemplate string
 
+//go:embed templates/logfile.go.tmpl
+var logfileTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -241,6 +244,10 @@ func RenderSecretsHelpers(cli *schema.CliFile) (string, error) {
 		}
 	}
 	return renderGoTemplate("secrets.go.tmpl", secretsTemplate, SecretTemplateData{SecretEnvNames: names}, nil)
+}
+
+func RenderLogFileHelper() (string, error) {
+	return renderGoTemplate("logfile.go.tmpl", logfileTemplate, nil, nil)
 }
 
 func toHandlerName(action string) string {
