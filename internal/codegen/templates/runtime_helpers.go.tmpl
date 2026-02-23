@@ -12,7 +12,7 @@ type envelope struct {
 	OK       bool   `json:"ok"`
 	Status   int    `json:"status"`
 	Body     any    `json:"body,omitempty"`
-	BodyText string `json:"body_text"`
+	BodyText *string `json:"body_text,omitempty"`
 }
 
 type arrayFlag []string
@@ -42,7 +42,8 @@ func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) (env
 	}
 	env := envelope{OK: ok, Status: resp.StatusCode}
 	if len(body) == 0 {
-		env.BodyText = ""
+		s := ""
+		env.BodyText = &s
 		return env, nil
 	}
 	var parsed any
@@ -50,6 +51,7 @@ func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) (env
 		env.Body = parsed
 		return env, nil
 	}
-	env.BodyText = string(body)
+	text := string(body)
+	env.BodyText = &text
 	return env, nil
 }

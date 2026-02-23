@@ -265,11 +265,11 @@ func TestRenderRuntimeHelpers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderRuntimeHelpers error: %v", err)
 	}
-	if !strings.Contains(out, `json:"body_text"`) {
-		t.Fatalf("body_text field tag missing: %s", out)
+	if !strings.Contains(out, `json:"body_text,omitempty"`) {
+		t.Fatalf("body_text should use omitempty with pointer type: %s", out)
 	}
-	if strings.Contains(out, `json:"body_text,omitempty"`) {
-		t.Fatalf("body_text should not use omitempty: %s", out)
+	if !strings.Contains(out, "BodyText *string") {
+		t.Fatalf("body_text should be a pointer type: %s", out)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), "generated_runtime_helpers.go", out, parser.AllErrors); err != nil {
 		t.Fatalf("generated code is not valid Go: %v", err)
