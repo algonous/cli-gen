@@ -44,6 +44,12 @@ var bodyBuilderTemplate string
 //go:embed templates/executor.go.tmpl
 var executorTemplate string
 
+//go:embed templates/custom_dispatcher.go.tmpl
+var customDispatcherTemplate string
+
+//go:embed templates/custom_bindings.go.tmpl
+var customBindingsTemplate string
+
 func RenderMain(set *schema.SchemaSet) (string, error) {
 	actions := make([]string, 0, len(set.Actions))
 	for _, a := range set.Actions {
@@ -188,6 +194,36 @@ func RenderExecutor(action *schema.ActionFile) (string, error) {
 		SuccessStatuses: action.Response.SuccessStatus,
 	}
 	return renderGoTemplate("executor.go.tmpl", executorTemplate, data, nil)
+}
+
+type CustomActionData struct {
+	ActionName     string
+	HandlerSuffix  string
+	ArgsTypeName   string
+	BindingFunc    string
+	PlaceholderMsg string
+}
+
+func RenderCustomDispatcher(actionName string) (string, error) {
+	data := CustomActionData{
+		ActionName:     actionName,
+		HandlerSuffix:  toHandlerName(actionName),
+		ArgsTypeName:   toHandlerName(actionName) + "Args",
+		BindingFunc:    "customBinding" + toHandlerName(actionName),
+		PlaceholderMsg: fmt.Sprintf("PLACEHOLDER: %s requires a custom binding", actionName),
+	}
+	return renderGoTemplate("custom_dispatcher.go.tmpl", customDispatcherTemplate, data, nil)
+}
+
+func RenderCustomBindingStub(actionName string) (string, error) {
+	data := CustomActionData{
+		ActionName:     actionName,
+		HandlerSuffix:  toHandlerName(actionName),
+		ArgsTypeName:   toHandlerName(actionName) + "Args",
+		BindingFunc:    "customBinding" + toHandlerName(actionName),
+		PlaceholderMsg: fmt.Sprintf("PLACEHOLDER: %s requires a custom binding", actionName),
+	}
+	return renderGoTemplate("custom_bindings.go.tmpl", customBindingsTemplate, data, nil)
 }
 
 func toHandlerName(action string) string {

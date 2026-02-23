@@ -1,0 +1,6 @@
+package main
+
+func handleAction{{ .HandlerSuffix }}(args []string) {
+	parsed := parseArgs{{ .HandlerSuffix }}(args)
+	{{ .BindingFunc }}(parsed)
+}

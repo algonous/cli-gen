@@ -234,3 +234,29 @@ func TestBuildEnvelope(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderCustomDispatcher(t *testing.T) {
+	out, err := RenderCustomDispatcher("create-or-update-file")
+	if err != nil {
+		t.Fatalf("RenderCustomDispatcher error: %v", err)
+	}
+	if !strings.Contains(out, "customBindingCreateOrUpdateFile") {
+		t.Fatalf("dispatcher missing custom binding call: %s", out)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_custom_dispatcher.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
+
+func TestRenderCustomBindingStub(t *testing.T) {
+	out, err := RenderCustomBindingStub("create-or-update-file")
+	if err != nil {
+		t.Fatalf("RenderCustomBindingStub error: %v", err)
+	}
+	if !strings.Contains(out, `"status":-2`) || !strings.Contains(out, "PLACEHOLDER: create-or-update-file requires a custom binding") {
+		t.Fatalf("stub missing placeholder envelope: %s", out)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "generated_custom_bindings.go", out, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go: %v", err)
+	}
+}
