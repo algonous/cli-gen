@@ -1,6 +1,5 @@
-BIN_DIR ?= ./bin
 BIN_NAME ?= cli-gen
-BIN_PATH := $(BIN_DIR)/$(BIN_NAME)
+BIN_PATH := $(BIN)/$(BIN_NAME)
 GOCACHE ?= /tmp/go-build-cache
 
 .PHONY: all test build clean
@@ -11,7 +10,7 @@ test:
 	GOCACHE=$(GOCACHE) go test ./...
 
 build:
-	mkdir -p $(BIN_DIR)
+	mkdir -p $(BIN)
 	GOCACHE=$(GOCACHE) go build -o $(BIN_PATH) ./cmd/cli-gen
 
 clean:
