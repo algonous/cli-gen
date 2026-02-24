@@ -59,6 +59,9 @@ func TestRenderArgParser(t *testing.T) {
 		`arrayFlag`,
 		`short flags are not supported`,
 		`fs.Visit(func(f *flag.Flag)`,
+		`fs.Usage = func()`,
+		`fmt.Sprintf("  --%s"`,
+		`flag.UnquoteUsage(f)`,
 	} {
 		if !strings.Contains(out, part) {
 			t.Fatalf("rendered output missing %q", part)
