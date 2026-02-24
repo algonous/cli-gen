@@ -13,6 +13,7 @@ func main() {
 	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	logFile := fs.String("log-file", "", "append JSONL output to file")
+	fs.Usage = func() {} // printTopHelp() handles --help output
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printTopHelp()

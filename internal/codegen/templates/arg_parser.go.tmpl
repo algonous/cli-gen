@@ -36,6 +36,23 @@ func parseArgs{{ .HandlerSuffix }}(args []string) {{ .HandlerSuffix }}Args {
 	{{ varName .Name }}Ptr := fs.{{ flagType .Type }}("{{ .Name }}", {{ if eq .Type "string" }}""{{ else if eq .Type "number" }}0{{ else }}false{{ end }}, "{{ .Help }}")
 {{- end }}
 {{- end }}
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", "{{ .ActionName }}")
+		fs.VisitAll(func(f *flag.Flag) {
+			s := fmt.Sprintf("  --%s", f.Name)
+			name, usage := flag.UnquoteUsage(f)
+			if len(name) > 0 {
+				s += " " + name
+			}
+			if len(s) <= 4 {
+				s += "\t"
+			} else {
+				s += "\n    \t"
+			}
+			s += strings.ReplaceAll(usage, "\n", "\n    \t")
+			fmt.Fprint(os.Stderr, s, "\n")
+		})
+	}
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}
