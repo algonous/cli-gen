@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"{{ .ModuleName }}/internal"
 )
 
 type skillWrittenEvent struct {
@@ -171,7 +173,7 @@ func handleSkill(args []string) {
 		os.Exit(1)
 	}
 	os.Stdout.Write(append(line, '\n'))
-	if err := appendLogLine(logFilePath, line); err != nil {
+	if err := internal.AppendLogLine(internal.LogFilePath, line); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
