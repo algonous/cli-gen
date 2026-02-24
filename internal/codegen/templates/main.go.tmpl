@@ -5,9 +5,24 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"{{ .ModuleName }}/internal"
+{{- if .HasGenerated }}
+	"{{ .ModuleName }}/generated"
+{{- end }}
+{{- if .HasCustom }}
+	"{{ .ModuleName }}/custom"
+{{- end }}
 )
 
-var logFilePath string
+var registry = map[string]func([]string){
+{{- range .GeneratedActions }}
+	"{{ . }}": generated.{{ handlerName . }},
+{{- end }}
+{{- range .CustomActions }}
+	"{{ . }}": custom.{{ handlerName . }},
+{{- end }}
+}
 
 func main() {
 	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
@@ -22,24 +37,24 @@ func main() {
 		os.Exit(2)
 	}
 	args := fs.Args()
-	logFilePath = *logFile
+	internal.LogFilePath = *logFile
 	if len(args) < 1 {
 		printTopHelp()
 		os.Exit(1)
 	}
 
-	switch args[0] {
-	case "skill":
+	if args[0] == "skill" {
 		handleSkill(args[1:])
-{{- range .Actions }}
-	case "{{ . }}":
-		handleAction{{ handlerName . }}(args[1:])
-{{- end }}
-	default:
+		return
+	}
+
+	action, ok := registry[args[0]]
+	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
 		printTopHelp()
 		os.Exit(1)
 	}
+	action(args[1:])
 }
 
 func printTopHelp() {
@@ -47,7 +62,7 @@ func printTopHelp() {
 	fmt.Println("Usage:")
 	fmt.Println("  {{ .CliName }} <subcommand> [flags]")
 	fmt.Println("Subcommands:")
-{{- range .Actions }}
+{{- range .AllActions }}
 	fmt.Println("  {{ . }}")
 {{- end }}
 	fmt.Println("  skill")

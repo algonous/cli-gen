@@ -1,0 +1,128 @@
+package internal
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+)
+
+// LogFilePath is set by main before dispatching to an action.
+var LogFilePath string
+
+// Envelope is the fixed response wrapper emitted to stdout.
+type Envelope struct {
+	OK       bool    `json:"ok"`
+	Status   int     `json:"status"`
+	Body     any     `json:"body,omitempty"`
+	BodyText *string `json:"body_text,omitempty"`
+}
+
+// ArrayFlag is a flag.Value that accumulates repeated --flag values.
+type ArrayFlag []string
+
+func (a *ArrayFlag) String() string { return strings.Join(*a, ",") }
+
+func (a *ArrayFlag) Set(v string) error {
+	*a = append(*a, v)
+	return nil
+}
+
+// BytesReaderCloser wraps a byte slice as an io.ReadCloser.
+func BytesReaderCloser(b []byte) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader(b))
+}
+
+// ReadAll reads all bytes from r.
+func ReadAll(r io.Reader) ([]byte, error) {
+	return io.ReadAll(r)
+}
+
+// LoadEnvs reads env var names from the environment, verifies required ones
+// are non-empty, and returns a map of name → value.
+func LoadEnvs(all, required []string) map[string]string {
+	envs := make(map[string]string, len(all))
+	for _, name := range all {
+		envs[name] = os.Getenv(name)
+	}
+	for _, name := range required {
+		if envs[name] == "" {
+			fmt.Fprintf(os.Stderr, "error: required env %s is not set\n", name)
+			os.Exit(1)
+		}
+	}
+	return envs
+}
+
+// BuildEnvelope constructs the response envelope from an HTTP response.
+func BuildEnvelope(successStatuses []int, resp *http.Response, body []byte) Envelope {
+	ok := false
+	for _, code := range successStatuses {
+		if resp.StatusCode == code {
+			ok = true
+			break
+		}
+	}
+	env := Envelope{OK: ok, Status: resp.StatusCode}
+	if len(body) == 0 {
+		s := ""
+		env.BodyText = &s
+		return env
+	}
+	var parsed any
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		env.Body = parsed
+		return env
+	}
+	text := string(body)
+	env.BodyText = &text
+	return env
+}
+
+// WriteOutput marshals env as a single JSON line to stdout, appends it to the
+// log file if configured, then exits 1 when env.OK is false.
+func WriteOutput(env Envelope) {
+	line, _ := json.Marshal(env)
+	os.Stdout.Write(append(line, '\n'))
+	_ = AppendLogLine(LogFilePath, line)
+	if !env.OK {
+		os.Exit(1)
+	}
+}
+
+// AppendLogLine appends line + newline to path. No-op when path is empty.
+func AppendLogLine(path string, line []byte) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// PlaceholderExit emits the -2 placeholder envelope and exits 1.
+// Called by unimplemented custom action stubs.
+func PlaceholderExit(name string) {
+	msg := `{"ok":false,"status":-2,"body_text":"PLACEHOLDER: ` + name + ` requires a custom binding"}`
+	fmt.Println(msg)
+	_ = AppendLogLine(LogFilePath, []byte(msg))
+	os.Exit(1)
+}
+
+// IsSecretEnv reports whether name is declared as a secret env in the schema.
+func IsSecretEnv(name string) bool {
+	switch name {
+{{- range .SecretEnvNames }}
+	case "{{ . }}":
+		return true
+{{- end }}
+	}
+	return false
+}

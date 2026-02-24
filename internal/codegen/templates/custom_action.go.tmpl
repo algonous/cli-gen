@@ -1,0 +1,10 @@
+package custom
+
+import "{{ .ModuleName }}/internal"
+
+// {{ .HandlerSuffix }} is the entry point for the {{ .ActionName }} action.
+// This file will NOT be overwritten when re-running cli-gen (see issue #4).
+// TODO: replace PlaceholderExit with a real implementation.
+func {{ .HandlerSuffix }}(args []string) {
+	internal.PlaceholderExit("{{ .ActionName }}")
+}

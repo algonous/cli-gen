@@ -9,13 +9,20 @@ import (
 	"github.com/autonous/cli-gen/internal/schema"
 )
 
+func mustParseGo(t *testing.T, label, src string) {
+	t.Helper()
+	if _, err := parser.ParseFile(token.NewFileSet(), label, src, parser.AllErrors); err != nil {
+		t.Fatalf("generated code is not valid Go (%s): %v\n--- source ---\n%s", label, err, src)
+	}
+}
+
 func TestRenderMain(t *testing.T) {
 	set := &schema.SchemaSet{
 		CLI: &schema.CliFile{Cli: schema.CliDef{Name: "github", Description: "GitHub REST API CLI"}},
 		Actions: []*schema.ActionFile{
-			{Name: "list-repo-issues"},
-			{Name: "create-issue"},
-			{Name: "create-or-update-file"},
+			{Name: "list-repo-issues", Impl: "generated"},
+			{Name: "create-issue", Impl: "generated"},
+			{Name: "create-or-update-file", Impl: "custom"},
 		},
 	}
 
@@ -24,55 +31,79 @@ func TestRenderMain(t *testing.T) {
 		t.Fatalf("RenderMain error: %v", err)
 	}
 
-	for _, part := range []string{"list-repo-issues", "create-issue", "create-or-update-file", "skill"} {
-		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
-		}
-	}
-	if !strings.Contains(out, `fs.String("log-file"`) {
-		t.Fatalf("rendered main missing --log-file flag")
-	}
-
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_main.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderArgParser(t *testing.T) {
-	action := &schema.ActionFile{
-		Name: "list-repo-issues",
-		Args: []schema.ArgDef{
-			{Name: "owner", Type: "string", Required: true, Help: "owner"},
-			{Name: "repo", Type: "string", Required: true, Help: "repo"},
-			{Name: "state", Type: "string", Required: false, Help: "state"},
-			{Name: "labels", Type: "array", Required: false, Help: "labels"},
-		},
-	}
-	out, err := RenderArgParser(action)
-	if err != nil {
-		t.Fatalf("RenderArgParser error: %v", err)
-	}
 	for _, part := range []string{
-		`fs.String("owner"`,
-		`fs.String("repo"`,
-		`fs.String("state"`,
-		`arrayFlag`,
-		`short flags are not supported`,
-		`fs.Visit(func(f *flag.Flag)`,
-		`fs.Usage = func()`,
-		`fmt.Sprintf("  --%s"`,
-		`flag.UnquoteUsage(f)`,
+		"list-repo-issues", "create-issue", "create-or-update-file", "skill",
+		`fs.String("log-file"`,
+		"github/generated",
+		"github/custom",
+		"github/internal",
+		"registry",
 	} {
 		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
+			t.Fatalf("rendered output missing %q\n--- source ---\n%s", part, out)
 		}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_arg_parser.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+
+	mustParseGo(t, "generated_main.go", out)
 }
 
-func TestRenderRequestBuilder(t *testing.T) {
+func TestRenderMainOnlyGenerated(t *testing.T) {
+	set := &schema.SchemaSet{
+		CLI: &schema.CliFile{Cli: schema.CliDef{Name: "mycli", Description: "My CLI"}},
+		Actions: []*schema.ActionFile{
+			{Name: "get-thing", Impl: "generated"},
+		},
+	}
+	out, err := RenderMain(set)
+	if err != nil {
+		t.Fatalf("RenderMain error: %v", err)
+	}
+	if strings.Contains(out, "mycli/custom") {
+		t.Fatalf("should not import custom when no custom actions: %s", out)
+	}
+	mustParseGo(t, "generated_main_only_gen.go", out)
+}
+
+func TestRenderInternalRuntime(t *testing.T) {
+	cli := &schema.CliFile{
+		Cli: schema.CliDef{
+			Runtime: schema.RuntimeDef{
+				Env: []schema.EnvEntry{
+					{Name: "GITHUB_TOKEN", Secret: true},
+					{Name: "GITHUB_BASE_URL", Secret: false},
+				},
+			},
+		},
+	}
+	out, err := RenderInternalRuntime(cli)
+	if err != nil {
+		t.Fatalf("RenderInternalRuntime error: %v", err)
+	}
+	for _, part := range []string{
+		`package internal`,
+		`var LogFilePath string`,
+		`json:"ok"`,
+		`json:"body_text,omitempty"`,
+		`BodyText *string`,
+		`func LoadEnvs(`,
+		`func BuildEnvelope(`,
+		`func WriteOutput(`,
+		`func AppendLogLine(`,
+		`func PlaceholderExit(`,
+		`case "GITHUB_TOKEN":`,
+		`os.OpenFile`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("RenderInternalRuntime missing %q\n--- source ---\n%s", part, out)
+		}
+	}
+	if strings.Contains(out, `case "GITHUB_BASE_URL"`) {
+		t.Fatalf("non-secret env should not be in IsSecretEnv switch: %s", out)
+	}
+	mustParseGo(t, "generated_internal_runtime.go", out)
+}
+
+func TestRenderGeneratedAction(t *testing.T) {
 	cli := &schema.CliFile{
 		Cli: schema.CliDef{
 			Runtime: schema.RuntimeDef{
@@ -88,6 +119,7 @@ func TestRenderRequestBuilder(t *testing.T) {
 	}
 	action := &schema.ActionFile{
 		Name: "list-repo-issues",
+		Impl: "generated",
 		Request: schema.RequestDef{
 			Method: "GET",
 			Path:   "/repos/{arg.owner}/{arg.repo}/issues",
@@ -102,17 +134,21 @@ func TestRenderRequestBuilder(t *testing.T) {
 			},
 		},
 		Args: []schema.ArgDef{
-			{Name: "owner", Type: "string", Required: true},
-			{Name: "repo", Type: "string", Required: true},
-			{Name: "state", Type: "string", Required: false},
-			{Name: "labels", Type: "array", Required: false},
+			{Name: "owner", Type: "string", Required: true, Help: "owner"},
+			{Name: "repo", Type: "string", Required: true, Help: "repo"},
+			{Name: "state", Type: "string", Required: false, Help: "state"},
+			{Name: "labels", Type: "array", Required: false, Help: "labels"},
 		},
+		Response: schema.ResponseDef{SuccessStatus: []int{200}},
 	}
-	out, err := RenderRequestBuilder(cli, action)
+
+	out, err := RenderGeneratedAction("github", cli, action)
 	if err != nil {
-		t.Fatalf("RenderRequestBuilder error: %v", err)
+		t.Fatalf("RenderGeneratedAction error: %v", err)
 	}
 	for _, part := range []string{
+		`package generated`,
+		`func ListRepoIssues(args []string)`,
 		`/repos/{arg.owner}/{arg.repo}/issues`,
 		`query.Add("state"`,
 		`query.Add("per_page", "50")`,
@@ -120,20 +156,35 @@ func TestRenderRequestBuilder(t *testing.T) {
 		`req.Header.Set("X-GitHub-Api-Version", "2022-11-28")`,
 		`if v, ok := envs["GITHUB_DEBUG_TRACE"]`,
 		`req.Header.Set("Authorization"`,
+		`internal.LoadEnvs(`,
+		`internal.BuildEnvelope(`,
+		`internal.WriteOutput(`,
+		`short flags are not supported`,
+		`fs.Visit(func(f *flag.Flag)`,
+		`fs.Usage = func()`,
 	} {
 		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
+			t.Fatalf("RenderGeneratedAction missing %q\n--- source ---\n%s", part, out)
 		}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_request_builder.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+	mustParseGo(t, "generated_list_repo_issues.go", out)
 }
 
-func TestRenderBodyBuilderTemplateMode(t *testing.T) {
+func TestRenderGeneratedActionWithBody(t *testing.T) {
+	cli := &schema.CliFile{
+		Cli: schema.CliDef{
+			Runtime: schema.RuntimeDef{
+				Env:     []schema.EnvEntry{{Name: "GITHUB_BASE_URL", Required: true}},
+				BaseURL: schema.BaseURLDef{FromEnv: "GITHUB_BASE_URL"},
+			},
+		},
+	}
 	action := &schema.ActionFile{
 		Name: "create-issue",
+		Impl: "generated",
 		Request: schema.RequestDef{
+			Method: "POST",
+			Path:   "/repos/{arg.owner}/{arg.repo}/issues",
 			Body: &schema.BodyDef{
 				Mode: "template",
 				Template: map[string]any{
@@ -145,138 +196,90 @@ func TestRenderBodyBuilderTemplateMode(t *testing.T) {
 			},
 		},
 		Args: []schema.ArgDef{
-			{Name: "title", Type: "string", Required: true},
-			{Name: "body", Type: "string", Required: false},
-			{Name: "assignees", Type: "array", Required: false},
-			{Name: "labels", Type: "array", Required: false},
+			{Name: "owner", Type: "string", Required: true, Help: "owner"},
+			{Name: "repo", Type: "string", Required: true, Help: "repo"},
+			{Name: "title", Type: "string", Required: true, Help: "title"},
+			{Name: "body", Type: "string", Required: false, Help: "body"},
+			{Name: "assignees", Type: "array", Required: false, Help: "assignees"},
+			{Name: "labels", Type: "array", Required: false, Help: "labels"},
 		},
+		Response: schema.ResponseDef{SuccessStatus: []int{201}},
 	}
-	out, err := RenderBodyBuilder(action)
+
+	out, err := RenderGeneratedAction("github", cli, action)
 	if err != nil {
-		t.Fatalf("RenderBodyBuilder error: %v", err)
+		t.Fatalf("RenderGeneratedAction (body) error: %v", err)
 	}
-	for _, part := range []string{`payload["title"]`, `payload["body"]`, `payload["assignees"]`, `payload["labels"]`} {
+	for _, part := range []string{
+		`func buildCreateIssueBody(`,
+		`payload["title"]`,
+		`payload["body"]`,
+		`payload["assignees"]`,
+		`payload["labels"]`,
+		`json.Marshal(payload)`,
+		`internal.BytesReaderCloser(bodyBytes)`,
+	} {
 		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
+			t.Fatalf("RenderGeneratedAction (body) missing %q\n--- source ---\n%s", part, out)
 		}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_body_builder.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+	mustParseGo(t, "generated_create_issue.go", out)
 }
 
-func TestRenderBodyBuilderRawJSONMode(t *testing.T) {
-	action := &schema.ActionFile{
-		Name: "create-or-update-file",
-		Request: schema.RequestDef{
-			Body: &schema.BodyDef{Mode: "raw_json_arg", Arg: "payload-json"},
-		},
-		Args: []schema.ArgDef{{Name: "payload-json", Type: "string", Required: true}},
-	}
-	out, err := RenderBodyBuilder(action)
-	if err != nil {
-		t.Fatalf("RenderBodyBuilder error: %v", err)
-	}
-	for _, part := range []string{`parsed.PayloadJson`, `json.Valid`, `[]byte(raw)`} {
-		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
-		}
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_body_builder_raw.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderExecutor(t *testing.T) {
-	action := &schema.ActionFile{Name: "list-repo-issues", Response: schema.ResponseDef{SuccessStatus: []int{200, 201}}}
-	out, err := RenderExecutor(action)
-	if err != nil {
-		t.Fatalf("RenderExecutor error: %v", err)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_executor.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderCustomDispatcher(t *testing.T) {
-	out, err := RenderCustomDispatcher("create-or-update-file")
-	if err != nil {
-		t.Fatalf("RenderCustomDispatcher error: %v", err)
-	}
-	if !strings.Contains(out, "customBindingCreateOrUpdateFile") {
-		t.Fatalf("dispatcher missing custom binding call: %s", out)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_custom_dispatcher.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderCustomBindingStub(t *testing.T) {
-	out, err := RenderCustomBindingStub("create-or-update-file")
-	if err != nil {
-		t.Fatalf("RenderCustomBindingStub error: %v", err)
-	}
-	if !strings.Contains(out, `"status":-2`) || !strings.Contains(out, "PLACEHOLDER: create-or-update-file requires a custom binding") {
-		t.Fatalf("stub missing placeholder envelope: %s", out)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_custom_bindings.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderSecretsHelpers(t *testing.T) {
+func TestRenderGeneratedActionRawJSON(t *testing.T) {
 	cli := &schema.CliFile{
 		Cli: schema.CliDef{
 			Runtime: schema.RuntimeDef{
-				Env: []schema.EnvEntry{
-					{Name: "GITHUB_TOKEN", Secret: true},
-					{Name: "GITHUB_BASE_URL", Secret: false},
-				},
+				Env:     []schema.EnvEntry{{Name: "GITHUB_BASE_URL", Required: true}},
+				BaseURL: schema.BaseURLDef{FromEnv: "GITHUB_BASE_URL"},
 			},
 		},
 	}
-	out, err := RenderSecretsHelpers(cli)
+	action := &schema.ActionFile{
+		Name: "create-or-update-file",
+		Impl: "generated",
+		Request: schema.RequestDef{
+			Method: "PUT",
+			Path:   "/repos/{arg.owner}/{arg.repo}/contents/{arg.path}",
+			Body:   &schema.BodyDef{Mode: "raw_json_arg", Arg: "payload-json"},
+		},
+		Args: []schema.ArgDef{
+			{Name: "owner", Type: "string", Required: true, Help: "owner"},
+			{Name: "repo", Type: "string", Required: true, Help: "repo"},
+			{Name: "path", Type: "string", Required: true, Help: "path"},
+			{Name: "payload-json", Type: "string", Required: true, Help: "payload"},
+		},
+		Response: schema.ResponseDef{SuccessStatus: []int{200, 201}},
+	}
+
+	out, err := RenderGeneratedAction("github", cli, action)
 	if err != nil {
-		t.Fatalf("RenderSecretsHelpers error: %v", err)
+		t.Fatalf("RenderGeneratedAction (raw_json) error: %v", err)
 	}
-	if !strings.Contains(out, `case "GITHUB_TOKEN"`) {
-		t.Fatalf("missing secret env switch case: %s", out)
+	for _, part := range []string{`parsed.PayloadJson`, `json.Valid`, `[]byte(raw)`} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("RenderGeneratedAction (raw_json) missing %q\n--- source ---\n%s", part, out)
+		}
 	}
-	if strings.Contains(out, `case "GITHUB_BASE_URL"`) {
-		t.Fatalf("non-secret env should not be in switch: %s", out)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_secrets.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+	mustParseGo(t, "generated_raw_json.go", out)
 }
 
-func TestRenderLogFileHelper(t *testing.T) {
-	out, err := RenderLogFileHelper()
+func TestRenderCustomAction(t *testing.T) {
+	action := &schema.ActionFile{Name: "create-or-update-file", Impl: "custom"}
+	out, err := RenderCustomAction("github", action)
 	if err != nil {
-		t.Fatalf("RenderLogFileHelper error: %v", err)
+		t.Fatalf("RenderCustomAction error: %v", err)
 	}
-	if !strings.Contains(out, "os.OpenFile") {
-		t.Fatalf("missing os.OpenFile in log helper: %s", out)
+	for _, part := range []string{
+		`package custom`,
+		`func CreateOrUpdateFile(args []string)`,
+		`internal.PlaceholderExit("create-or-update-file")`,
+	} {
+		if !strings.Contains(out, part) {
+			t.Fatalf("RenderCustomAction missing %q\n--- source ---\n%s", part, out)
+		}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_logfile.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
-}
-
-func TestRenderRuntimeHelpers(t *testing.T) {
-	out, err := RenderRuntimeHelpers()
-	if err != nil {
-		t.Fatalf("RenderRuntimeHelpers error: %v", err)
-	}
-	if !strings.Contains(out, `json:"body_text,omitempty"`) {
-		t.Fatalf("body_text should use omitempty with pointer type: %s", out)
-	}
-	if !strings.Contains(out, "BodyText *string") {
-		t.Fatalf("body_text should be a pointer type: %s", out)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_runtime_helpers.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+	mustParseGo(t, "generated_custom_action.go", out)
 }
 
 func TestRenderSkillHandler(t *testing.T) {
@@ -306,28 +309,18 @@ func TestRenderSkillHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderSkillHandler error: %v", err)
 	}
-	for _, part := range []string{"list-repo-issues", "create-issue", "create-or-update-file", "skill_written"} {
-		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
-		}
-	}
 	for _, part := range []string{
-		"SKILL.md",
-		"name: github-skill",
-		"## Purpose",
-		"## Workflow",
-		"## Actions",
-		"### list-repo-issues",
-		"### Arguments",
-		"### Examples",
+		"list-repo-issues", "create-issue", "create-or-update-file", "skill_written",
+		"SKILL.md", "name: github-skill",
+		"## Purpose", "## Workflow", "## Actions",
+		"### list-repo-issues", "### Arguments", "### Examples",
 		"- Endpoint: `GET /repos/{arg.owner}/{arg.repo}/issues`",
 		"## Output Contract",
+		"github/internal",
 	} {
 		if !strings.Contains(out, part) {
-			t.Fatalf("rendered output missing %q", part)
+			t.Fatalf("RenderSkillHandler missing %q\n--- source ---\n%s", part, out)
 		}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), "generated_skill.go", out, parser.AllErrors); err != nil {
-		t.Fatalf("generated code is not valid Go: %v", err)
-	}
+	mustParseGo(t, "generated_skill.go", out)
 }
