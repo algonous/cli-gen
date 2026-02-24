@@ -38,51 +38,37 @@ func {{ .HandlerSuffix }}(args []string) {
 {{- range .PathArgLines }}
 	{{ . }}
 {{- end }}
-	u, err := url.Parse(baseURL + path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: build url: %v\n", err)
-		os.Exit(1)
-	}
-	query := u.Query()
+	query := url.Values{}
 {{- range .QueryLines }}
 	{{ . }}
 {{- end }}
-	u.RawQuery = query.Encode()
-
-	req, err := http.NewRequest("{{ .Method }}", u.String(), nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-{{- range .HeaderLines }}
-	{{ . }}
-{{- end }}
 {{- if .HasBody }}
+	var bodyBytes []byte
 
 	bodyBytes, err := build{{ .HandlerSuffix }}Body(parsed)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	if bodyBytes != nil {
-		req.Body = internal.BytesReaderCloser(bodyBytes)
-	}
 {{- end }}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	body, err := internal.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	env := internal.BuildEnvelope([]int{ {{- range $i, $code := .SuccessStatuses }}{{ if $i }}, {{ end }}{{ $code }}{{- end }} }, resp, body)
-	internal.WriteOutput(env)
+	internal.CallAndWriteOutput(
+		"{{ .Method }}",
+		baseURL,
+		path,
+		query,
+{{- if .HasBody }}
+		bodyBytes,
+{{- else }}
+		nil,
+{{- end }}
+		[]int{ {{- range $i, $code := .SuccessStatuses }}{{ if $i }}, {{ end }}{{ $code }}{{- end }} },
+		func(req *http.Request) {
+{{- range .HeaderLines }}
+			{{ . }}
+{{- end }}
+		},
+	)
 }
 
 func parse{{ .HandlerSuffix }}Args(args []string) {{ .HandlerSuffix }}Args {

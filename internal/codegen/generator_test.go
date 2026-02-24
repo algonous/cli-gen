@@ -86,6 +86,7 @@ func TestRenderInternalRuntime(t *testing.T) {
 		`json:"body_text,omitempty"`,
 		`BodyText *string`,
 		`func LoadEnvs(`,
+		`func CallAndWriteOutput(`,
 		`func BuildEnvelope(`,
 		`func WriteOutput(`,
 		`func AppendLogLine(`,
@@ -157,8 +158,7 @@ func TestRenderGeneratedAction(t *testing.T) {
 		`if v, ok := envs["GITHUB_DEBUG_TRACE"]`,
 		`req.Header.Set("Authorization"`,
 		`internal.LoadEnvs(`,
-		`internal.BuildEnvelope(`,
-		`internal.WriteOutput(`,
+		`internal.CallAndWriteOutput(`,
 		`short flags are not supported`,
 		`fs.Visit(func(f *flag.Flag)`,
 		`fs.Usage = func()`,
@@ -217,7 +217,7 @@ func TestRenderGeneratedActionWithBody(t *testing.T) {
 		`payload["assignees"]`,
 		`payload["labels"]`,
 		`json.Marshal(payload)`,
-		`internal.BytesReaderCloser(bodyBytes)`,
+		`bodyBytes, err := buildCreateIssueBody(parsed)`,
 	} {
 		if !strings.Contains(out, part) {
 			t.Fatalf("RenderGeneratedAction (body) missing %q\n--- source ---\n%s", part, out)

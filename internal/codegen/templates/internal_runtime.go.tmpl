@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -39,6 +40,59 @@ func BytesReaderCloser(b []byte) io.ReadCloser {
 // ReadAll reads all bytes from r.
 func ReadAll(r io.Reader) ([]byte, error) {
 	return io.ReadAll(r)
+}
+
+// CallAndWriteOutput builds an HTTP request, executes it, then emits the
+// standard response envelope to stdout/log.
+func CallAndWriteOutput(
+	method string,
+	baseURL string,
+	path string,
+	query url.Values,
+	body []byte,
+	successStatuses []int,
+	configure func(*http.Request),
+) {
+	u, err := url.Parse(baseURL + path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: build url: %v\n", err)
+		os.Exit(1)
+	}
+	q := u.Query()
+	for key, vals := range query {
+		for _, v := range vals {
+			q.Add(key, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(method, u.String(), nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if body != nil {
+		req.Body = BytesReaderCloser(body)
+	}
+	if configure != nil {
+		configure(req)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	env := BuildEnvelope(successStatuses, resp, respBody)
+	WriteOutput(env)
 }
 
 // LoadEnvs reads env var names from the environment, verifies required ones
