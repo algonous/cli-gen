@@ -238,7 +238,7 @@ func RenderGeneratedAction(moduleName string, cli *schema.CliFile, action *schem
 	// Compute import flags by scanning generated lines
 	allLines := append(append(queryLines, headerLines...), pathArgLines...)
 	needsStrconv := containsStr(allLines, "strconv.")
-	needsStrings := len(pathArgLines) > 0 || containsStr(queryLines, "strings.")
+	needsStrings := true // template always uses strings.HasPrefix + strings.ReplaceAll in arg parsing
 	needsJSON := hasBody
 
 	data := GeneratedActionData{
